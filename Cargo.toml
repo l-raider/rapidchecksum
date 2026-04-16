@@ -1,0 +1,16 @@
+[package]
+name = "rapidchecksum"
+version = "0.1.0"
+edition = "2021"
+description = "A Linux clone of RapidCRC — fast file hashing with CRC32, SHA1, SHA256, SHA512"
+license = "GPL-3.0"
+
+[dependencies]
+slint = "1.11"
+crc32fast = "1.4"
+sha1 = "0.10"
+sha2 = "0.10"
+rfd = "0.15"
+
+[build-dependencies]
+slint-build = "1.11"
