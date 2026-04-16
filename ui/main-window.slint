@@ -1,4 +1,4 @@
-import { StandardTableView, GroupBox, Button, ProgressIndicator, LineEdit, ComboBox } from "std-widgets.slint";
+import { StandardTableView, GroupBox, Button, ProgressIndicator, LineEdit, ComboBox, CheckBox } from "std-widgets.slint";
 
 export component MainWindow inherits Window {
     title: "RapidChecksum";
@@ -47,6 +47,15 @@ export component MainWindow inherits Window {
     callback copy-filepath();
     callback copy-hash();
     callback open-containing-folder();
+    callback open-settings();
+    callback settings-changed(bool, bool, bool, bool);
+
+    // Settings — algorithm toggles (synced from Rust on startup)
+    in-out property <bool> setting-crc32: true;
+    in-out property <bool> setting-sha1: true;
+    in-out property <bool> setting-sha256: true;
+    in-out property <bool> setting-sha512: true;
+    in-out property <bool> settings-visible: false;
 
     VerticalLayout {
         padding: 8px;
@@ -248,6 +257,14 @@ export component MainWindow inherits Window {
             spacing: 8px;
             vertical-stretch: 0;
 
+            Button {
+                text: "Settings";
+                enabled: !root.is-hashing;
+                clicked => {
+                    root.settings-visible = true;
+                }
+            }
+
             Rectangle { horizontal-stretch: 1; }
 
             Button {
@@ -263,6 +280,94 @@ export component MainWindow inherits Window {
             Button {
                 text: "Exit";
                 clicked => { root.exit-app(); }
+            }
+        }
+    }
+
+    // Settings overlay
+    if root.settings-visible : Rectangle {
+        width: 100%;
+        height: 100%;
+        background: #00000040;
+
+        TouchArea {
+            // Block clicks from reaching the main UI
+        }
+
+        Rectangle {
+            x: (root.width - self.width) / 2;
+            y: (root.height - self.height) / 2;
+            width: 260px;
+            height: 250px;
+            border-width: 1px;
+            border-radius: 6px;
+            border-color: #888;
+            background: white;
+
+            VerticalLayout {
+                padding: 16px;
+                spacing: 10px;
+
+                Text {
+                    text: "Settings";
+                    font-size: 16px;
+                    font-weight: 700;
+                    horizontal-alignment: center;
+                }
+
+                GroupBox {
+                    title: "Algorithms";
+
+                    VerticalLayout {
+                        spacing: 6px;
+                        padding: 4px;
+
+                        cb-crc32 := CheckBox {
+                            text: "CRC32";
+                            checked: root.setting-crc32;
+                        }
+                        cb-sha1 := CheckBox {
+                            text: "SHA1";
+                            checked: root.setting-sha1;
+                        }
+                        cb-sha256 := CheckBox {
+                            text: "SHA256";
+                            checked: root.setting-sha256;
+                        }
+                        cb-sha512 := CheckBox {
+                            text: "SHA512";
+                            checked: root.setting-sha512;
+                        }
+                    }
+                }
+
+                HorizontalLayout {
+                    spacing: 8px;
+                    alignment: center;
+
+                    Button {
+                        text: "OK";
+                        clicked => {
+                            root.setting-crc32 = cb-crc32.checked;
+                            root.setting-sha1 = cb-sha1.checked;
+                            root.setting-sha256 = cb-sha256.checked;
+                            root.setting-sha512 = cb-sha512.checked;
+                            root.settings-changed(
+                                cb-crc32.checked,
+                                cb-sha1.checked,
+                                cb-sha256.checked,
+                                cb-sha512.checked
+                            );
+                            root.settings-visible = false;
+                        }
+                    }
+                    Button {
+                        text: "Cancel";
+                        clicked => {
+                            root.settings-visible = false;
+                        }
+                    }
+                }
             }
         }
     }

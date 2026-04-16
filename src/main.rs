@@ -1,3 +1,4 @@
+mod config;
 mod fileio;
 mod hasher;
 mod model;
@@ -11,6 +12,7 @@ use std::sync::{mpsc, Arc};
 use slint::ComponentHandle;
 
 use hasher::HashKind;
+use config::AppConfig;
 use model::FileListModel;
 use worker::{FileTask, WorkerMessage};
 
@@ -25,6 +27,16 @@ fn main() {
 
     let file_list = Rc::new(RefCell::new(FileListModel::new()));
     let cancel_flag: Arc<AtomicBool> = Arc::new(AtomicBool::new(false));
+    let config = Rc::new(RefCell::new(AppConfig::load()));
+
+    // Sync loaded settings to the UI
+    {
+        let cfg = config.borrow();
+        app.set_setting_crc32(cfg.hash_crc32);
+        app.set_setting_sha1(cfg.hash_sha1);
+        app.set_setting_sha256(cfg.hash_sha256);
+        app.set_setting_sha512(cfg.hash_sha512);
+    }
 
     // Keeps the polling timer alive for the duration of a hashing run.
     // Slint timers stop when dropped, so we must hold this somewhere that
@@ -35,7 +47,7 @@ fn main() {
     app.set_file_rows(file_list.borrow().model_rc());
 
     setup_open_files(&app, &file_list);
-    setup_start_hashing(&app, &file_list, &cancel_flag, &timer_holder);
+    setup_start_hashing(&app, &file_list, &cancel_flag, &timer_holder, &config);
     setup_row_selection(&app, &file_list);
     setup_cancel(&app, &cancel_flag, &timer_holder);
     setup_clear_list(&app, &file_list);
@@ -45,6 +57,7 @@ fn main() {
     setup_sort(&app, &file_list);
     let clipboard = Rc::new(RefCell::new(arboard::Clipboard::new().ok()));
     setup_context_menu(&app, &file_list, &clipboard);
+    setup_settings(&app, &config);
 
     app.run().unwrap();
 }
@@ -89,11 +102,13 @@ fn setup_start_hashing(
     file_list: &Rc<RefCell<FileListModel>>,
     cancel_flag: &Arc<AtomicBool>,
     timer_holder: &Rc<RefCell<Option<slint::Timer>>>,
+    config: &Rc<RefCell<AppConfig>>,
 ) {
     let weak = app.as_weak();
     let file_list = file_list.clone();
     let cancel_flag = cancel_flag.clone();
     let timer_holder = timer_holder.clone();
+    let config = config.clone();
 
     app.on_start_hashing(move || {
         let list = file_list.borrow();
@@ -123,7 +138,7 @@ fn setup_start_hashing(
         }
 
         let (tx, rx) = mpsc::channel::<WorkerMessage>();
-        let kinds = HashKind::all().to_vec();
+        let kinds = config.borrow().enabled_hash_kinds();
         worker::spawn_hash_worker(tasks, kinds, tx, cancel_flag.clone());
 
         let start_time = std::time::Instant::now();
@@ -412,6 +427,18 @@ fn setup_context_menu(app: &MainWindow, file_list: &Rc<RefCell<FileListModel>>, 
             }
         });
     }
+}
+
+fn setup_settings(app: &MainWindow, config: &Rc<RefCell<AppConfig>>) {
+    let config = config.clone();
+    app.on_settings_changed(move |crc32, sha1, sha256, sha512| {
+        let mut cfg = config.borrow_mut();
+        cfg.hash_crc32 = crc32;
+        cfg.hash_sha1 = sha1;
+        cfg.hash_sha256 = sha256;
+        cfg.hash_sha512 = sha512;
+        cfg.save();
+    });
 }
 
 fn clear_results(app: &MainWindow) {

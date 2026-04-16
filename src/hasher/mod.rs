@@ -7,7 +7,7 @@ use std::fmt;
 
 /// Identifies which hash algorithm to use.
 /// Adding a new algorithm: add a variant here, implement HashAlgorithm,
-/// and register it in `HashKind::all()` and `create_hasher()`.
+/// and register it in `create_hasher()`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum HashKind {
     CRC32,
@@ -17,15 +17,6 @@ pub enum HashKind {
 }
 
 impl HashKind {
-    pub fn all() -> &'static [HashKind] {
-        &[
-            HashKind::CRC32,
-            HashKind::SHA1,
-            HashKind::SHA256,
-            HashKind::SHA512,
-        ]
-    }
-
     pub fn name(&self) -> &'static str {
         match self {
             HashKind::CRC32 => "CRC32",
