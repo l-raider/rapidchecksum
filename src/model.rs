@@ -114,7 +114,41 @@ impl FileListModel {
         self.entries.len()
     }
 
+    /// Sort entries by the given column index (0=File, 1=CRC32, 2=SHA1, 3=SHA256, 4=SHA512, 5=Info).
+    pub fn sort(&mut self, column: usize, ascending: bool) {
+        self.entries.sort_by(|a, b| {
+            let a_val = entry_sort_key(a, column);
+            let b_val = entry_sort_key(b, column);
+            if ascending {
+                a_val.cmp(&b_val)
+            } else {
+                b_val.cmp(&a_val)
+            }
+        });
+        for (i, entry) in self.entries.iter().enumerate() {
+            self.table_model.set_row_data(i, entry.to_row());
+        }
+    }
+
     pub fn model_rc(&self) -> ModelRc<ModelRc<StandardListViewItem>> {
         ModelRc::from(self.table_model.clone())
+    }
+}
+
+fn entry_sort_key(entry: &FileEntry, column: usize) -> String {
+    match column {
+        0 => entry.filename.to_lowercase(),
+        1 => entry.hash_value(HashKind::CRC32).to_ascii_lowercase(),
+        2 => entry.hash_value(HashKind::SHA1).to_ascii_lowercase(),
+        3 => entry.hash_value(HashKind::SHA256).to_ascii_lowercase(),
+        4 => entry.hash_value(HashKind::SHA512).to_ascii_lowercase(),
+        5 => {
+            if let Some(ref err) = entry.error {
+                format!("error: {}", err.to_lowercase())
+            } else {
+                entry.info.to_lowercase()
+            }
+        }
+        _ => String::new(),
     }
 }

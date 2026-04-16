@@ -42,6 +42,8 @@ export component MainWindow inherits Window {
     callback row-selected(int);
     callback clear-list();
     callback remove-selected();
+    callback sort-ascending(int);
+    callback sort-descending(int);
 
     VerticalLayout {
         padding: 8px;
@@ -64,6 +66,12 @@ export component MainWindow inherits Window {
 
             current-row-changed(row-index) => {
                 root.row-selected(row-index);
+            }
+            sort-ascending(col) => {
+                root.sort-ascending(col);
+            }
+            sort-descending(col) => {
+                root.sort-descending(col);
             }
         }
 

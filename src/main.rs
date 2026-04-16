@@ -42,6 +42,7 @@ fn main() {
     setup_remove_selected(&app, &file_list);
     setup_create_hash_files(&app, &file_list);
     setup_exit(&app);
+    setup_sort(&app, &file_list);
 
     app.run().unwrap();
 }
@@ -325,6 +326,21 @@ fn setup_exit(app: &MainWindow) {
             let _ = app.hide();
         }
     });
+}
+
+fn setup_sort(app: &MainWindow, file_list: &Rc<RefCell<FileListModel>>) {
+    {
+        let file_list = file_list.clone();
+        app.on_sort_ascending(move |col| {
+            file_list.borrow_mut().sort(col as usize, true);
+        });
+    }
+    {
+        let file_list = file_list.clone();
+        app.on_sort_descending(move |col| {
+            file_list.borrow_mut().sort(col as usize, false);
+        });
+    }
 }
 
 fn clear_results(app: &MainWindow) {
