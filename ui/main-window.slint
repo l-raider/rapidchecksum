@@ -1,0 +1,218 @@
+import { StandardTableView, GroupBox, Button, ProgressIndicator, LineEdit, ComboBox } from "std-widgets.slint";
+
+export component MainWindow inherits Window {
+    title: "RapidChecksum";
+    preferred-width: 900px;
+    preferred-height: 650px;
+    min-width: 700px;
+    min-height: 500px;
+
+    // Exposed properties for the Rust side to read/write
+    in-out property <int> selected-row: -1;
+
+    // Table data — set from Rust via set_file_rows()
+    in-out property <[[StandardListViewItem]]> file-rows: [[]];
+
+    // Selected file details for the Results group
+    in-out property <string> result-filename: "";
+    in-out property <string> result-crc32: "";
+    in-out property <string> result-sha1: "";
+    in-out property <string> result-sha256: "";
+    in-out property <string> result-sha512: "";
+    in-out property <string> result-info: "";
+
+    // Progress (0.0 to 1.0)
+    in-out property <float> file-progress: 0.0;
+    in-out property <float> global-progress: 0.0;
+    in-out property <string> status-text: "Ready";
+    in-out property <bool> is-hashing: false;
+
+    // Callbacks from UI to Rust
+    callback open-files();
+    callback exit-app();
+    callback cancel-hashing();
+    callback create-sfv-file();
+    callback create-sha1-file();
+    callback create-sha256-file();
+    callback create-sha512-file();
+    callback row-selected(int);
+    callback clear-list();
+    callback remove-selected();
+
+    VerticalLayout {
+        padding: 8px;
+        spacing: 6px;
+
+        // Main file table — fills available space
+        table := StandardTableView {
+            vertical-stretch: 1;
+
+            columns: [
+                { title: "File", min-width: 150px, width: 200px },
+                { title: "CRC32", min-width: 80px, width: 90px },
+                { title: "SHA1", min-width: 100px, width: 340px },
+                { title: "SHA256", min-width: 100px, width: 520px },
+                { title: "SHA512", min-width: 100px, width: 520px },
+                { title: "Info", min-width: 100px, width: 180px },
+            ];
+
+            rows: root.file-rows;
+
+            current-row-changed(row-index) => {
+                root.row-selected(row-index);
+            }
+        }
+
+        // Results group box — shows details for selected file
+        GroupBox {
+            title: "Results";
+            vertical-stretch: 0;
+
+            VerticalLayout {
+                spacing: 4px;
+                padding: 4px;
+
+                HorizontalLayout {
+                    spacing: 8px;
+                    Text { text: "File:"; width: 55px; vertical-alignment: center; }
+                    LineEdit { text: root.result-filename; read-only: true; horizontal-stretch: 1; }
+                }
+                HorizontalLayout {
+                    spacing: 8px;
+                    Text { text: "CRC32:"; width: 55px; vertical-alignment: center; }
+                    LineEdit { text: root.result-crc32; read-only: true; horizontal-stretch: 1; font-size: 11px; }
+                }
+                HorizontalLayout {
+                    spacing: 8px;
+                    Text { text: "SHA1:"; width: 55px; vertical-alignment: center; }
+                    LineEdit { text: root.result-sha1; read-only: true; horizontal-stretch: 1; font-size: 11px; }
+                }
+                HorizontalLayout {
+                    spacing: 8px;
+                    Text { text: "SHA256:"; width: 55px; vertical-alignment: center; }
+                    LineEdit { text: root.result-sha256; read-only: true; horizontal-stretch: 1; font-size: 11px; }
+                }
+                HorizontalLayout {
+                    spacing: 8px;
+                    Text { text: "SHA512:"; width: 55px; vertical-alignment: center; }
+                    LineEdit { text: root.result-sha512; read-only: true; horizontal-stretch: 1; font-size: 11px; }
+                }
+                HorizontalLayout {
+                    spacing: 8px;
+                    Text { text: "Info:"; width: 55px; vertical-alignment: center; }
+                    LineEdit { text: root.result-info; read-only: true; horizontal-stretch: 1; }
+                }
+            }
+        }
+
+        // Action button row
+        HorizontalLayout {
+            spacing: 6px;
+            vertical-stretch: 0;
+            alignment: start;
+
+            Text {
+                text: "Create:";
+                vertical-alignment: center;
+            }
+            Button {
+                text: "SFV file";
+                enabled: !root.is-hashing;
+                clicked => { root.create-sfv-file(); }
+            }
+            Button {
+                text: "SHA1 file";
+                enabled: !root.is-hashing;
+                clicked => { root.create-sha1-file(); }
+            }
+            Button {
+                text: "SHA256 file";
+                enabled: !root.is-hashing;
+                clicked => { root.create-sha256-file(); }
+            }
+            Button {
+                text: "SHA512 file";
+                enabled: !root.is-hashing;
+                clicked => { root.create-sha512-file(); }
+            }
+
+            Rectangle { horizontal-stretch: 1; }
+
+            Button {
+                text: "Clear List";
+                enabled: !root.is-hashing;
+                clicked => { root.clear-list(); }
+            }
+            Button {
+                text: "Remove Selected";
+                enabled: !root.is-hashing;
+                clicked => { root.remove-selected(); }
+            }
+        }
+
+        // Status row
+        HorizontalLayout {
+            spacing: 8px;
+            vertical-stretch: 0;
+
+            Text {
+                text: "Status:";
+                vertical-alignment: center;
+            }
+            LineEdit {
+                text: root.status-text;
+                read-only: true;
+                horizontal-stretch: 1;
+            }
+            Button {
+                text: "Cancel";
+                visible: root.is-hashing;
+                clicked => { root.cancel-hashing(); }
+            }
+        }
+
+        // Progress bars row
+        HorizontalLayout {
+            spacing: 8px;
+            vertical-stretch: 0;
+            height: 20px;
+
+            Text {
+                text: "File:";
+                vertical-alignment: center;
+                width: 30px;
+            }
+            ProgressIndicator {
+                progress: root.file-progress;
+                horizontal-stretch: 1;
+            }
+            Text {
+                text: "Total:";
+                vertical-alignment: center;
+                width: 38px;
+            }
+            ProgressIndicator {
+                progress: root.global-progress;
+                horizontal-stretch: 1;
+            }
+        }
+
+        // Bottom action row
+        HorizontalLayout {
+            spacing: 8px;
+            vertical-stretch: 0;
+
+            Rectangle { horizontal-stretch: 1; }
+
+            Button {
+                text: root.is-hashing ? "Hashing..." : "Open Files";
+                enabled: !root.is-hashing;
+                clicked => { root.open-files(); }
+            }
+            Button {
+                text: "Exit";
+                clicked => { root.exit-app(); }
+            }
+        }
+    }
+}
