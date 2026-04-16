@@ -35,23 +35,21 @@ impl FileEntry {
         self.hashes.get(&kind).map(|s| s.as_str()).unwrap_or("")
     }
 
-    /// Convert this entry to a row of StandardListViewItems for the table.
-    /// Column order: File, CRC32, SHA1, SHA256, SHA512, Info
-    pub fn to_row(&self) -> ModelRc<StandardListViewItem> {
+    /// Convert this entry to a row for the given set of visible hash kinds.
+    /// Column order: File, [enabled hash columns...], Info
+    pub fn to_row(&self, visible_kinds: &[HashKind]) -> ModelRc<StandardListViewItem> {
         let info_text = if let Some(ref err) = self.error {
             format!("Error: {}", err)
         } else {
             self.info.clone()
         };
 
-        let items = vec![
-            StandardListViewItem::from(SharedString::from(&self.filename)),
-            StandardListViewItem::from(SharedString::from(self.hash_value(HashKind::CRC32))),
-            StandardListViewItem::from(SharedString::from(self.hash_value(HashKind::SHA1))),
-            StandardListViewItem::from(SharedString::from(self.hash_value(HashKind::SHA256))),
-            StandardListViewItem::from(SharedString::from(self.hash_value(HashKind::SHA512))),
-            StandardListViewItem::from(SharedString::from(&info_text)),
-        ];
+        let mut items = Vec::with_capacity(2 + visible_kinds.len());
+        items.push(StandardListViewItem::from(SharedString::from(&self.filename)));
+        for &kind in visible_kinds {
+            items.push(StandardListViewItem::from(SharedString::from(self.hash_value(kind))));
+        }
+        items.push(StandardListViewItem::from(SharedString::from(&info_text)));
         ModelRc::new(VecModel::from(items))
     }
 }
@@ -60,6 +58,8 @@ impl FileEntry {
 pub struct FileListModel {
     pub entries: Vec<FileEntry>,
     pub table_model: Rc<VecModel<ModelRc<StandardListViewItem>>>,
+    /// Which hash columns are currently visible (drives row generation).
+    pub visible_kinds: Vec<HashKind>,
 }
 
 impl FileListModel {
@@ -67,12 +67,13 @@ impl FileListModel {
         Self {
             entries: Vec::new(),
             table_model: Rc::new(VecModel::default()),
+            visible_kinds: vec![HashKind::CRC32, HashKind::SHA1, HashKind::SHA256, HashKind::SHA512],
         }
     }
 
     pub fn add_file(&mut self, path: PathBuf) {
         let entry = FileEntry::new(path);
-        let row = entry.to_row();
+        let row = entry.to_row(&self.visible_kinds);
         self.entries.push(entry);
         self.table_model.push(row);
     }
@@ -82,7 +83,7 @@ impl FileListModel {
         if let Some(entry) = self.entries.get_mut(index) {
             entry.hashes = hashes;
             entry.info = info;
-            self.table_model.set_row_data(index, entry.to_row());
+            self.table_model.set_row_data(index, entry.to_row(&self.visible_kinds));
         }
     }
 
@@ -90,7 +91,7 @@ impl FileListModel {
     pub fn set_error(&mut self, index: usize, error: String) {
         if let Some(entry) = self.entries.get_mut(index) {
             entry.error = Some(error);
-            self.table_model.set_row_data(index, entry.to_row());
+            self.table_model.set_row_data(index, entry.to_row(&self.visible_kinds));
         }
     }
 
@@ -114,20 +115,32 @@ impl FileListModel {
         self.entries.len()
     }
 
-    /// Sort entries by the given column index (0=File, 1=CRC32, 2=SHA1, 3=SHA256, 4=SHA512, 5=Info).
+    /// Update which hash columns are visible and refresh all rows.
+    pub fn set_visible_kinds(&mut self, kinds: Vec<HashKind>) {
+        self.visible_kinds = kinds;
+        self.refresh_all_rows();
+    }
+
+    /// Refresh all table rows (e.g. after column change).
+    pub fn refresh_all_rows(&self) {
+        for (i, entry) in self.entries.iter().enumerate() {
+            self.table_model.set_row_data(i, entry.to_row(&self.visible_kinds));
+        }
+    }
+
+    /// Sort entries by the given dynamic column index.
     pub fn sort(&mut self, column: usize, ascending: bool) {
+        let visible_kinds = self.visible_kinds.clone();
         self.entries.sort_by(|a, b| {
-            let a_val = entry_sort_key(a, column);
-            let b_val = entry_sort_key(b, column);
+            let a_val = sort_key_for_kinds(a, column, &visible_kinds);
+            let b_val = sort_key_for_kinds(b, column, &visible_kinds);
             if ascending {
                 a_val.cmp(&b_val)
             } else {
                 b_val.cmp(&a_val)
             }
         });
-        for (i, entry) in self.entries.iter().enumerate() {
-            self.table_model.set_row_data(i, entry.to_row());
-        }
+        self.refresh_all_rows();
     }
 
     pub fn model_rc(&self) -> ModelRc<ModelRc<StandardListViewItem>> {
@@ -135,20 +148,23 @@ impl FileListModel {
     }
 }
 
-fn entry_sort_key(entry: &FileEntry, column: usize) -> String {
-    match column {
-        0 => entry.filename.to_lowercase(),
-        1 => entry.hash_value(HashKind::CRC32).to_ascii_lowercase(),
-        2 => entry.hash_value(HashKind::SHA1).to_ascii_lowercase(),
-        3 => entry.hash_value(HashKind::SHA256).to_ascii_lowercase(),
-        4 => entry.hash_value(HashKind::SHA512).to_ascii_lowercase(),
-        5 => {
-            if let Some(ref err) = entry.error {
-                format!("error: {}", err.to_lowercase())
-            } else {
-                entry.info.to_lowercase()
-            }
-        }
-        _ => String::new(),
+/// Standalone sort-key helper (avoids borrow issues in sort closure).
+fn sort_key_for_kinds(entry: &FileEntry, column: usize, visible_kinds: &[HashKind]) -> String {
+    if column == 0 {
+        return entry.filename.to_lowercase();
+    }
+    let info_col = 1 + visible_kinds.len();
+    if column == info_col {
+        return if let Some(ref err) = entry.error {
+            format!("error: {}", err.to_lowercase())
+        } else {
+            entry.info.to_lowercase()
+        };
+    }
+    let kind_idx = column - 1;
+    if let Some(&kind) = visible_kinds.get(kind_idx) {
+        entry.hash_value(kind).to_ascii_lowercase()
+    } else {
+        String::new()
     }
 }

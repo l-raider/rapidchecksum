@@ -9,7 +9,7 @@ use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc};
 
-use slint::ComponentHandle;
+use slint::{ComponentHandle, ModelRc, TableColumn, VecModel};
 
 use hasher::HashKind;
 use config::AppConfig;
@@ -29,13 +29,16 @@ fn main() {
     let cancel_flag: Arc<AtomicBool> = Arc::new(AtomicBool::new(false));
     let config = Rc::new(RefCell::new(AppConfig::load()));
 
-    // Sync loaded settings to the UI
+    // Sync loaded settings to the UI and set initial visible columns
     {
         let cfg = config.borrow();
         app.set_setting_crc32(cfg.hash_crc32);
         app.set_setting_sha1(cfg.hash_sha1);
         app.set_setting_sha256(cfg.hash_sha256);
         app.set_setting_sha512(cfg.hash_sha512);
+        let kinds = cfg.enabled_hash_kinds();
+        app.set_table_columns(build_table_columns(&kinds));
+        file_list.borrow_mut().set_visible_kinds(kinds);
     }
 
     // Keeps the polling timer alive for the duration of a hashing run.
@@ -57,7 +60,7 @@ fn main() {
     setup_sort(&app, &file_list);
     let clipboard = Rc::new(RefCell::new(arboard::Clipboard::new().ok()));
     setup_context_menu(&app, &file_list, &clipboard);
-    setup_settings(&app, &config);
+    setup_settings(&app, &config, &file_list);
 
     app.run().unwrap();
 }
@@ -429,8 +432,10 @@ fn setup_context_menu(app: &MainWindow, file_list: &Rc<RefCell<FileListModel>>, 
     }
 }
 
-fn setup_settings(app: &MainWindow, config: &Rc<RefCell<AppConfig>>) {
+fn setup_settings(app: &MainWindow, config: &Rc<RefCell<AppConfig>>, file_list: &Rc<RefCell<FileListModel>>) {
     let config = config.clone();
+    let file_list = file_list.clone();
+    let weak = app.as_weak();
     app.on_settings_changed(move |crc32, sha1, sha256, sha512| {
         let mut cfg = config.borrow_mut();
         cfg.hash_crc32 = crc32;
@@ -438,7 +443,38 @@ fn setup_settings(app: &MainWindow, config: &Rc<RefCell<AppConfig>>) {
         cfg.hash_sha256 = sha256;
         cfg.hash_sha512 = sha512;
         cfg.save();
+
+        let kinds = cfg.enabled_hash_kinds();
+        if let Some(app) = weak.upgrade() {
+            app.set_table_columns(build_table_columns(&kinds));
+        }
+        file_list.borrow_mut().set_visible_kinds(kinds);
     });
+}
+
+/// Build the Slint TableColumn array for the current set of enabled hash kinds.
+fn make_table_column(title: &str, min_width: f32, width: f32) -> TableColumn {
+    let mut col = TableColumn::default();
+    col.title = title.into();
+    col.min_width = min_width;
+    col.width = width;
+    col
+}
+
+fn build_table_columns(kinds: &[HashKind]) -> ModelRc<TableColumn> {
+    let mut cols = Vec::with_capacity(2 + kinds.len());
+    cols.push(make_table_column("File", 150.0, 200.0));
+    for &kind in kinds {
+        let (min_w, w) = match kind {
+            HashKind::CRC32 => (80.0, 90.0),
+            HashKind::SHA1 => (100.0, 340.0),
+            HashKind::SHA256 => (100.0, 520.0),
+            HashKind::SHA512 => (100.0, 520.0),
+        };
+        cols.push(make_table_column(kind.name(), min_w, w));
+    }
+    cols.push(make_table_column("Info", 100.0, 180.0));
+    ModelRc::new(VecModel::from(cols))
 }
 
 fn clear_results(app: &MainWindow) {
