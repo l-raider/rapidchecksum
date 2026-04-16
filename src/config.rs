@@ -12,6 +12,8 @@ pub struct AppConfig {
     #[serde(default = "default_true")]
     pub hash_crc32: bool,
     #[serde(default = "default_true")]
+    pub hash_md5: bool,
+    #[serde(default = "default_true")]
     pub hash_sha1: bool,
     #[serde(default = "default_true")]
     pub hash_sha256: bool,
@@ -27,6 +29,7 @@ impl Default for AppConfig {
     fn default() -> Self {
         Self {
             hash_crc32: true,
+            hash_md5: true,
             hash_sha1: true,
             hash_sha256: true,
             hash_sha512: true,
@@ -66,6 +69,9 @@ impl AppConfig {
         let mut kinds = Vec::new();
         if self.hash_crc32 {
             kinds.push(HashKind::CRC32);
+        }
+        if self.hash_md5 {
+            kinds.push(HashKind::MD5);
         }
         if self.hash_sha1 {
             kinds.push(HashKind::SHA1);

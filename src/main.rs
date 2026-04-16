@@ -24,6 +24,7 @@ extern crate sha1 as sha1_crate;
 
 fn main() {
     let app = MainWindow::new().unwrap();
+    let settings_dlg = SettingsDialog::new().unwrap();
 
     let file_list = Rc::new(RefCell::new(FileListModel::new()));
     let cancel_flag: Arc<AtomicBool> = Arc::new(AtomicBool::new(false));
@@ -33,9 +34,15 @@ fn main() {
     {
         let cfg = config.borrow();
         app.set_setting_crc32(cfg.hash_crc32);
+        app.set_setting_md5(cfg.hash_md5);
         app.set_setting_sha1(cfg.hash_sha1);
         app.set_setting_sha256(cfg.hash_sha256);
         app.set_setting_sha512(cfg.hash_sha512);
+        settings_dlg.set_setting_crc32(cfg.hash_crc32);
+        settings_dlg.set_setting_md5(cfg.hash_md5);
+        settings_dlg.set_setting_sha1(cfg.hash_sha1);
+        settings_dlg.set_setting_sha256(cfg.hash_sha256);
+        settings_dlg.set_setting_sha512(cfg.hash_sha512);
         let kinds = cfg.enabled_hash_kinds();
         app.set_table_columns(build_table_columns(&kinds));
         file_list.borrow_mut().set_visible_kinds(kinds);
@@ -60,7 +67,7 @@ fn main() {
     setup_sort(&app, &file_list);
     let clipboard = Rc::new(RefCell::new(arboard::Clipboard::new().ok()));
     setup_context_menu(&app, &file_list, &clipboard);
-    setup_settings(&app, &config, &file_list);
+    setup_settings(&app, &settings_dlg, &config, &file_list);
 
     app.run().unwrap();
 }
@@ -337,6 +344,7 @@ fn setup_create_hash_files(app: &MainWindow, file_list: &Rc<RefCell<FileListMode
 
         match kind {
             HashKind::CRC32 => app.on_create_sfv_file(callback),
+            HashKind::MD5 => app.on_create_md5_file(callback),
             HashKind::SHA1 => app.on_create_sha1_file(callback),
             HashKind::SHA256 => app.on_create_sha256_file(callback),
             HashKind::SHA512 => app.on_create_sha512_file(callback),
@@ -432,24 +440,71 @@ fn setup_context_menu(app: &MainWindow, file_list: &Rc<RefCell<FileListModel>>, 
     }
 }
 
-fn setup_settings(app: &MainWindow, config: &Rc<RefCell<AppConfig>>, file_list: &Rc<RefCell<FileListModel>>) {
-    let config = config.clone();
-    let file_list = file_list.clone();
-    let weak = app.as_weak();
-    app.on_settings_changed(move |crc32, sha1, sha256, sha512| {
-        let mut cfg = config.borrow_mut();
-        cfg.hash_crc32 = crc32;
-        cfg.hash_sha1 = sha1;
-        cfg.hash_sha256 = sha256;
-        cfg.hash_sha512 = sha512;
-        cfg.save();
+fn setup_settings(
+    app: &MainWindow,
+    dlg: &SettingsDialog,
+    config: &Rc<RefCell<AppConfig>>,
+    file_list: &Rc<RefCell<FileListModel>>,
+) {
+    // Settings button: sync current values into dialog then show it
+    {
+        let dlg_weak = dlg.as_weak();
+        let config = config.clone();
+        app.on_open_settings(move || {
+            if let Some(dlg) = dlg_weak.upgrade() {
+                let cfg = config.borrow();
+                dlg.set_setting_crc32(cfg.hash_crc32);
+                dlg.set_setting_md5(cfg.hash_md5);
+                dlg.set_setting_sha1(cfg.hash_sha1);
+                dlg.set_setting_sha256(cfg.hash_sha256);
+                dlg.set_setting_sha512(cfg.hash_sha512);
+                dlg.window().set_size(slint::LogicalSize::new(220.0, 210.0));
+                dlg.show().ok();
+            }
+        });
+    }
 
-        let kinds = cfg.enabled_hash_kinds();
-        if let Some(app) = weak.upgrade() {
-            app.set_table_columns(build_table_columns(&kinds));
-        }
-        file_list.borrow_mut().set_visible_kinds(kinds);
-    });
+    // OK: save config, update columns, close dialog
+    {
+        let dlg_weak = dlg.as_weak();
+        let app_weak = app.as_weak();
+        let config = config.clone();
+        let file_list = file_list.clone();
+        dlg.on_accepted(move |crc32, md5, sha1, sha256, sha512| {
+            let mut cfg = config.borrow_mut();
+            cfg.hash_crc32 = crc32;
+            cfg.hash_md5 = md5;
+            cfg.hash_sha1 = sha1;
+            cfg.hash_sha256 = sha256;
+            cfg.hash_sha512 = sha512;
+            cfg.save();
+
+            let kinds = cfg.enabled_hash_kinds();
+            if let Some(app) = app_weak.upgrade() {
+                app.set_setting_crc32(crc32);
+                app.set_setting_md5(md5);
+                app.set_setting_sha1(sha1);
+                app.set_setting_sha256(sha256);
+                app.set_setting_sha512(sha512);
+                app.set_table_columns(build_table_columns(&kinds));
+            }
+            file_list.borrow_mut().set_visible_kinds(kinds);
+
+            if let Some(dlg) = dlg_weak.upgrade() {
+                dlg.hide().ok();
+            }
+        });
+    }
+
+    // Cancel: just close
+    {
+        let dlg_weak = dlg.as_weak();
+        dlg.on_cancelled(move || {
+            if let Some(dlg) = dlg_weak.upgrade() {
+                dlg.hide().ok();
+            }
+        });
+    }
 }
 
 /// Build the Slint TableColumn array for the current set of enabled hash kinds.
@@ -467,6 +522,7 @@ fn build_table_columns(kinds: &[HashKind]) -> ModelRc<TableColumn> {
     for &kind in kinds {
         let (min_w, w) = match kind {
             HashKind::CRC32 => (80.0, 90.0),
+            HashKind::MD5 => (80.0, 260.0),
             HashKind::SHA1 => (100.0, 340.0),
             HashKind::SHA256 => (100.0, 520.0),
             HashKind::SHA512 => (100.0, 520.0),

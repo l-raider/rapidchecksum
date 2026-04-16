@@ -1,4 +1,5 @@
 mod crc32;
+mod md5;
 mod sha1;
 mod sha256;
 mod sha512;
@@ -11,6 +12,7 @@ use std::fmt;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum HashKind {
     CRC32,
+    MD5,
     SHA1,
     SHA256,
     SHA512,
@@ -20,6 +22,7 @@ impl HashKind {
     pub fn name(&self) -> &'static str {
         match self {
             HashKind::CRC32 => "CRC32",
+            HashKind::MD5 => "MD5",
             HashKind::SHA1 => "SHA1",
             HashKind::SHA256 => "SHA256",
             HashKind::SHA512 => "SHA512",
@@ -30,6 +33,7 @@ impl HashKind {
     pub fn file_extension(&self) -> &'static str {
         match self {
             HashKind::CRC32 => "sfv",
+            HashKind::MD5 => "md5",
             HashKind::SHA1 => "sha1",
             HashKind::SHA256 => "sha256",
             HashKind::SHA512 => "sha512",
@@ -54,6 +58,7 @@ pub trait HashAlgorithm: Send {
 pub fn create_hasher(kind: HashKind) -> Box<dyn HashAlgorithm> {
     match kind {
         HashKind::CRC32 => Box::new(crc32::Crc32Hasher::new()),
+        HashKind::MD5 => Box::new(md5::Md5Hasher::new()),
         HashKind::SHA1 => Box::new(sha1::Sha1Hasher::new()),
         HashKind::SHA256 => Box::new(sha256::Sha256Hasher::new()),
         HashKind::SHA512 => Box::new(sha512::Sha512Hasher::new()),
