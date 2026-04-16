@@ -27,8 +27,12 @@ export component MainWindow inherits Window {
     in-out property <string> status-text: "Ready";
     in-out property <bool> is-hashing: false;
 
+    // Number of files in the list — controls Start button enabled state
+    in-out property <int> file-count: 0;
+
     // Callbacks from UI to Rust
     callback open-files();
+    callback start-hashing();
     callback exit-app();
     callback cancel-hashing();
     callback create-sfv-file();
@@ -205,9 +209,14 @@ export component MainWindow inherits Window {
             Rectangle { horizontal-stretch: 1; }
 
             Button {
-                text: root.is-hashing ? "Hashing..." : "Open Files";
+                text: "Open Files";
                 enabled: !root.is-hashing;
                 clicked => { root.open-files(); }
+            }
+            Button {
+                text: root.is-hashing ? "Hashing..." : "Start Hashing";
+                enabled: !root.is-hashing && root.file-count > 0;
+                clicked => { root.start-hashing(); }
             }
             Button {
                 text: "Exit";

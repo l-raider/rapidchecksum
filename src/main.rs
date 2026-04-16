@@ -26,12 +26,18 @@ fn main() {
     let file_list = Rc::new(RefCell::new(FileListModel::new()));
     let cancel_flag: Arc<AtomicBool> = Arc::new(AtomicBool::new(false));
 
+    // Keeps the polling timer alive for the duration of a hashing run.
+    // Slint timers stop when dropped, so we must hold this somewhere that
+    // outlives the callback closure that creates the timer.
+    let timer_holder: Rc<RefCell<Option<slint::Timer>>> = Rc::new(RefCell::new(None));
+
     // Bind the table model to the UI
     app.set_file_rows(file_list.borrow().model_rc());
 
-    setup_open_files(&app, &file_list, &cancel_flag);
+    setup_open_files(&app, &file_list);
+    setup_start_hashing(&app, &file_list, &cancel_flag, &timer_holder);
     setup_row_selection(&app, &file_list);
-    setup_cancel(&app, &cancel_flag);
+    setup_cancel(&app, &cancel_flag, &timer_holder);
     setup_clear_list(&app, &file_list);
     setup_remove_selected(&app, &file_list);
     setup_create_hash_files(&app, &file_list);
@@ -40,22 +46,13 @@ fn main() {
     app.run().unwrap();
 }
 
-/// "Open Files" button: launch native file dialog, add files, start hashing.
-fn setup_open_files(
-    app: &MainWindow,
-    file_list: &Rc<RefCell<FileListModel>>,
-    cancel_flag: &Arc<AtomicBool>,
-) {
+/// "Open Files" button: open a file dialog and add selected files to the list.
+/// Does NOT start hashing — use the "Start Hashing" button for that.
+fn setup_open_files(app: &MainWindow, file_list: &Rc<RefCell<FileListModel>>) {
     let weak = app.as_weak();
     let file_list = file_list.clone();
-    let cancel_flag = cancel_flag.clone();
 
     app.on_open_files(move || {
-        let weak = weak.clone();
-        let file_list = file_list.clone();
-        let cancel_flag = cancel_flag.clone();
-
-        // rfd file dialog must run outside Slint event loop to avoid blocking
         let dialog = rfd::FileDialog::new()
             .set_title("Select files to hash")
             .pick_files();
@@ -65,9 +62,6 @@ fn setup_open_files(
             _ => return,
         };
 
-        // Record the starting index so we only hash the newly-added files
-        let start_index = file_list.borrow().len();
-
         {
             let mut list = file_list.borrow_mut();
             for path in &paths {
@@ -75,60 +69,75 @@ fn setup_open_files(
             }
         }
 
-        // Update the table model binding
         if let Some(app) = weak.upgrade() {
             app.set_file_rows(file_list.borrow().model_rc());
+            app.set_file_count(file_list.borrow().len() as i32);
+            app.set_status_text(slint::format!(
+                "{} file(s) ready — press Start Hashing",
+                file_list.borrow().len()
+            ));
+        }
+    });
+}
+
+/// "Start Hashing" button: hash all files currently in the list.
+fn setup_start_hashing(
+    app: &MainWindow,
+    file_list: &Rc<RefCell<FileListModel>>,
+    cancel_flag: &Arc<AtomicBool>,
+    timer_holder: &Rc<RefCell<Option<slint::Timer>>>,
+) {
+    let weak = app.as_weak();
+    let file_list = file_list.clone();
+    let cancel_flag = cancel_flag.clone();
+    let timer_holder = timer_holder.clone();
+
+    app.on_start_hashing(move || {
+        let list = file_list.borrow();
+        if list.entries.is_empty() {
+            return;
         }
 
-        // Build file tasks for the worker
-        let tasks: Vec<FileTask> = {
-            let list = file_list.borrow();
-            (start_index..list.len())
-                .map(|i| FileTask {
-                    index: i,
-                    path: list.entries[i].path.clone(),
-                })
-                .collect()
-        };
-
+        let tasks: Vec<FileTask> = list
+            .entries
+            .iter()
+            .enumerate()
+            .map(|(i, entry)| FileTask {
+                index: i,
+                path: entry.path.clone(),
+            })
+            .collect();
         let total_files = tasks.len();
+        drop(list);
+
         cancel_flag.store(false, Ordering::Relaxed);
 
-        // Set UI to hashing state
         if let Some(app) = weak.upgrade() {
             app.set_is_hashing(true);
             app.set_global_progress(0.0);
             app.set_file_progress(0.0);
-            app.set_status_text(slint::format!(
-                "Hashing {} file(s)...",
-                total_files
-            ));
+            app.set_status_text(slint::format!("Hashing {} file(s)...", total_files));
         }
 
         let (tx, rx) = mpsc::channel::<WorkerMessage>();
-
-        // Spawn the worker thread
         let kinds = HashKind::all().to_vec();
-        worker::spawn_hash_worker(tasks, kinds, tx, cancel_flag);
+        worker::spawn_hash_worker(tasks, kinds, tx, cancel_flag.clone());
 
-        // Poll the channel from the Slint event loop using a timer
-        let timer = slint::Timer::default();
+        // Store the timer in the holder so it outlives this closure.
+        // Without this the timer drops immediately and polling never fires.
         let weak_timer = weak.clone();
         let file_list_timer = file_list.clone();
+        let timer_holder_inner = timer_holder.clone();
         let mut files_completed: usize = 0;
 
+        let timer = slint::Timer::default();
         timer.start(
             slint::TimerMode::Repeated,
-            std::time::Duration::from_millis(16), // ~60fps polling
+            std::time::Duration::from_millis(16),
             move || {
-                // Drain all available messages
                 while let Ok(msg) = rx.try_recv() {
                     match msg {
-                        WorkerMessage::FileProgress {
-                            bytes_read,
-                            total_bytes,
-                            ..
-                        } => {
+                        WorkerMessage::FileProgress { bytes_read, total_bytes, .. } => {
                             if let Some(app) = weak_timer.upgrade() {
                                 let pct = if total_bytes > 0 {
                                     bytes_read as f32 / total_bytes as f32
@@ -138,14 +147,8 @@ fn setup_open_files(
                                 app.set_file_progress(pct);
                             }
                         }
-                        WorkerMessage::FileComplete {
-                            file_index,
-                            hashes,
-                            info,
-                        } => {
-                            file_list_timer
-                                .borrow_mut()
-                                .update_hashes(file_index, hashes, info);
+                        WorkerMessage::FileComplete { file_index, hashes, info } => {
+                            file_list_timer.borrow_mut().update_hashes(file_index, hashes, info);
                             files_completed += 1;
                             if let Some(app) = weak_timer.upgrade() {
                                 app.set_global_progress(
@@ -172,15 +175,18 @@ fn setup_open_files(
                                 app.set_is_hashing(false);
                                 app.set_file_progress(0.0);
                                 app.set_status_text(slint::format!(
-                                    "Done — {} file(s) processed",
+                                    "Done \u{2014} {} file(s) processed",
                                     files_completed
                                 ));
                             }
+                            // Drop the timer — polling stops
+                            *timer_holder_inner.borrow_mut() = None;
                         }
                     }
                 }
             },
         );
+        *timer_holder.borrow_mut() = Some(timer);
     });
 }
 
@@ -214,11 +220,18 @@ fn setup_row_selection(app: &MainWindow, file_list: &Rc<RefCell<FileListModel>>)
     });
 }
 
-fn setup_cancel(app: &MainWindow, cancel_flag: &Arc<AtomicBool>) {
+fn setup_cancel(
+    app: &MainWindow,
+    cancel_flag: &Arc<AtomicBool>,
+    timer_holder: &Rc<RefCell<Option<slint::Timer>>>,
+) {
     let cancel = cancel_flag.clone();
     let weak = app.as_weak();
+    let timer_holder = timer_holder.clone();
     app.on_cancel_hashing(move || {
         cancel.store(true, Ordering::Relaxed);
+        // Stop polling
+        *timer_holder.borrow_mut() = None;
         if let Some(app) = weak.upgrade() {
             app.set_is_hashing(false);
             app.set_status_text(slint::SharedString::from("Cancelled"));
@@ -233,6 +246,7 @@ fn setup_clear_list(app: &MainWindow, file_list: &Rc<RefCell<FileListModel>>) {
         file_list.borrow_mut().clear();
         if let Some(app) = weak.upgrade() {
             clear_results(&app);
+            app.set_file_count(0);
             app.set_status_text(slint::SharedString::from("Ready"));
         }
     });
@@ -248,6 +262,7 @@ fn setup_remove_selected(app: &MainWindow, file_list: &Rc<RefCell<FileListModel>
             if idx < list.len() {
                 list.remove(idx);
                 clear_results(&app);
+                app.set_file_count(list.len() as i32);
             }
         }
     });
