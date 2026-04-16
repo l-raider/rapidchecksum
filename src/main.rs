@@ -124,6 +124,8 @@ fn setup_start_hashing(
         let kinds = HashKind::all().to_vec();
         worker::spawn_hash_worker(tasks, kinds, tx, cancel_flag.clone());
 
+        let start_time = std::time::Instant::now();
+
         // Store the timer in the holder so it outlives this closure.
         // Without this the timer drops immediately and polling never fires.
         let weak_timer = weak.clone();
@@ -173,11 +175,14 @@ fn setup_start_hashing(
                         }
                         WorkerMessage::AllComplete => {
                             if let Some(app) = weak_timer.upgrade() {
+                                let elapsed = start_time.elapsed();
+                                let time_str = format_duration(elapsed);
                                 app.set_is_hashing(false);
                                 app.set_file_progress(0.0);
                                 app.set_status_text(slint::format!(
-                                    "Done \u{2014} {} file(s) processed",
-                                    files_completed
+                                    "Done \u{2014} {} file(s) processed in {}",
+                                    files_completed,
+                                    time_str.as_str()
                                 ));
                             }
                             // Drop the timer — polling stops
@@ -350,4 +355,23 @@ fn clear_results(app: &MainWindow) {
     app.set_result_sha256(slint::SharedString::default());
     app.set_result_sha512(slint::SharedString::default());
     app.set_result_info(slint::SharedString::default());
+}
+
+fn format_duration(d: std::time::Duration) -> String {
+    let total_secs = d.as_secs();
+    let millis = d.subsec_millis();
+    if total_secs >= 3600 {
+        let h = total_secs / 3600;
+        let m = (total_secs % 3600) / 60;
+        let s = total_secs % 60;
+        format!("{}h {:02}m {:02}s", h, m, s)
+    } else if total_secs >= 60 {
+        let m = total_secs / 60;
+        let s = total_secs % 60;
+        format!("{}m {:02}s", m, s)
+    } else if total_secs >= 10 {
+        format!("{}.{:01}s", total_secs, millis / 100)
+    } else {
+        format!("{}.{:03}s", total_secs, millis)
+    }
 }
