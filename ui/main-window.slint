@@ -44,34 +44,56 @@ export component MainWindow inherits Window {
     callback remove-selected();
     callback sort-ascending(int);
     callback sort-descending(int);
+    callback copy-filepath();
+    callback copy-hash();
+    callback open-containing-folder();
 
     VerticalLayout {
         padding: 8px;
         spacing: 6px;
 
         // Main file table — fills available space
-        table := StandardTableView {
+        ContextMenuArea {
             vertical-stretch: 1;
+            enabled: root.selected-row >= 0;
 
-            columns: [
-                { title: "File", min-width: 150px, width: 200px },
-                { title: "CRC32", min-width: 80px, width: 90px },
-                { title: "SHA1", min-width: 100px, width: 340px },
-                { title: "SHA256", min-width: 100px, width: 520px },
-                { title: "SHA512", min-width: 100px, width: 520px },
-                { title: "Info", min-width: 100px, width: 180px },
-            ];
-
-            rows: root.file-rows;
-
-            current-row-changed(row-index) => {
-                root.row-selected(row-index);
+            Menu {
+                MenuItem {
+                    title: "Copy Filepath";
+                    activated => { root.copy-filepath(); }
+                }
+                MenuItem {
+                    title: "Copy Hash";
+                    activated => { root.copy-hash(); }
+                }
+                MenuItem {
+                    title: "Show in File Manager";
+                    activated => { root.open-containing-folder(); }
+                }
             }
-            sort-ascending(col) => {
-                root.sort-ascending(col);
-            }
-            sort-descending(col) => {
-                root.sort-descending(col);
+
+            table := StandardTableView {
+
+                columns: [
+                    { title: "File", min-width: 150px, width: 200px },
+                    { title: "CRC32", min-width: 80px, width: 90px },
+                    { title: "SHA1", min-width: 100px, width: 340px },
+                    { title: "SHA256", min-width: 100px, width: 520px },
+                    { title: "SHA512", min-width: 100px, width: 520px },
+                    { title: "Info", min-width: 100px, width: 180px },
+                ];
+
+                rows: root.file-rows;
+
+                current-row-changed(row-index) => {
+                    root.row-selected(row-index);
+                }
+                sort-ascending(col) => {
+                    root.sort-ascending(col);
+                }
+                sort-descending(col) => {
+                    root.sort-descending(col);
+                }
             }
         }
 
