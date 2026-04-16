@@ -53,26 +53,30 @@ export component MainWindow inherits Window {
         spacing: 6px;
 
         // Main file table — fills available space
-        ContextMenuArea {
+        ctx-menu := ContextMenuArea {
             vertical-stretch: 1;
-            enabled: root.selected-row >= 0;
 
             Menu {
                 MenuItem {
                     title: "Copy Filepath";
+                    enabled: root.selected-row >= 0;
                     activated => { root.copy-filepath(); }
                 }
                 MenuItem {
                     title: "Copy Hash";
+                    enabled: root.selected-row >= 0;
                     activated => { root.copy-hash(); }
                 }
                 MenuItem {
                     title: "Show in File Manager";
+                    enabled: root.selected-row >= 0;
                     activated => { root.open-containing-folder(); }
                 }
             }
 
             table := StandardTableView {
+                width: 100%;
+                height: 100%;
 
                 columns: [
                     { title: "File", min-width: 150px, width: 200px },
@@ -86,6 +90,7 @@ export component MainWindow inherits Window {
                 rows: root.file-rows;
 
                 current-row-changed(row-index) => {
+                    root.selected-row = row-index;
                     root.row-selected(row-index);
                 }
                 sort-ascending(col) => {
@@ -93,6 +98,13 @@ export component MainWindow inherits Window {
                 }
                 sort-descending(col) => {
                     root.sort-descending(col);
+                }
+                row-pointer-event(row-index, event, mouse-pos) => {
+                    if (event.kind == PointerEventKind.up && event.button == PointerEventButton.right) {
+                        root.selected-row = row-index;
+                        root.row-selected(row-index);
+                        ctx-menu.show({x: mouse-pos.x, y: mouse-pos.y + self.absolute-position.y - ctx-menu.absolute-position.y});
+                    }
                 }
             }
         }
