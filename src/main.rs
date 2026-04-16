@@ -43,7 +43,8 @@ fn main() {
     setup_create_hash_files(&app, &file_list);
     setup_exit(&app);
     setup_sort(&app, &file_list);
-    setup_context_menu(&app, &file_list);
+    let clipboard = Rc::new(RefCell::new(arboard::Clipboard::new().ok()));
+    setup_context_menu(&app, &file_list, &clipboard);
 
     app.run().unwrap();
 }
@@ -349,19 +350,20 @@ fn setup_sort(app: &MainWindow, file_list: &Rc<RefCell<FileListModel>>) {
     }
 }
 
-fn setup_context_menu(app: &MainWindow, file_list: &Rc<RefCell<FileListModel>>) {
+fn setup_context_menu(app: &MainWindow, file_list: &Rc<RefCell<FileListModel>>, clipboard: &Rc<RefCell<Option<arboard::Clipboard>>>) {
     // Copy Filepath
     {
         let weak = app.as_weak();
         let file_list = file_list.clone();
+        let clipboard = clipboard.clone();
         app.on_copy_filepath(move || {
             if let Some(app) = weak.upgrade() {
                 let idx = app.get_selected_row() as usize;
                 let list = file_list.borrow();
                 if let Some(entry) = list.entries.get(idx) {
                     let path_str = entry.path.display().to_string();
-                    if let Ok(mut clipboard) = arboard::Clipboard::new() {
-                        let _ = clipboard.set_text(&path_str);
+                    if let Some(cb) = clipboard.borrow_mut().as_mut() {
+                        let _ = cb.set_text(&path_str);
                     }
                 }
             }
@@ -371,6 +373,7 @@ fn setup_context_menu(app: &MainWindow, file_list: &Rc<RefCell<FileListModel>>) 
     {
         let weak = app.as_weak();
         let file_list = file_list.clone();
+        let clipboard = clipboard.clone();
         app.on_copy_hash(move || {
             if let Some(app) = weak.upgrade() {
                 let idx = app.get_selected_row() as usize;
@@ -385,8 +388,8 @@ fn setup_context_menu(app: &MainWindow, file_list: &Rc<RefCell<FileListModel>>) 
                     }
                     let text = lines.join("\n");
                     if !text.is_empty() {
-                        if let Ok(mut clipboard) = arboard::Clipboard::new() {
-                            let _ = clipboard.set_text(&text);
+                        if let Some(cb) = clipboard.borrow_mut().as_mut() {
+                            let _ = cb.set_text(&text);
                         }
                     }
                 }
