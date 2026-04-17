@@ -380,6 +380,10 @@ impl qobject::AppBackend {
     }
 
     fn handle_worker_message(mut self: Pin<&mut Self>, msg: WorkerMessage) {
+        // Ignore stale messages from a cancelled/completed run
+        if !self.rust().is_hashing {
+            return;
+        }
         match msg {
             WorkerMessage::FileProgress {
                 file_index,
@@ -458,6 +462,7 @@ impl qobject::AppBackend {
         if let Some(ref flag) = self.rust().cancel_flag {
             flag.store(true, Ordering::SeqCst);
         }
+        self.as_mut().rust_mut().cancel_flag = None;
         self.as_mut().set_is_hashing(false);
         self.as_mut()
             .set_status_text(QString::from("Cancelled"));
