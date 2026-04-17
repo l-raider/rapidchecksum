@@ -407,6 +407,7 @@ ApplicationWindow {
                     delegate: Rectangle {
                         required property int row
                         required property int column
+                        implicitWidth: 100
                         implicitHeight: 28
                         color: model.isSelected ? palette.highlight
                              : model.isError    ? Qt.rgba(0.37, 0.07, 0.07, 1)
