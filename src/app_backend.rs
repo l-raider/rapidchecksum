@@ -13,6 +13,15 @@ use crate::hasher::HashKind;
 use crate::model::FileEntry;
 use crate::worker::{spawn_hash_worker, FileTask, WorkerMessage};
 
+extern "C" {
+    fn qt_set_clipboard(text: *const std::ffi::c_char);
+}
+
+fn set_clipboard(text: &str) {
+    let cstr = std::ffi::CString::new(text).unwrap_or_default();
+    unsafe { qt_set_clipboard(cstr.as_ptr()); }
+}
+
 // Role IDs for QAbstractTableModel
 const ROLE_DISPLAY: i32 = 0;    // Qt::DisplayRole
 const ROLE_IS_ERROR: i32 = 256;  // Qt::UserRole
@@ -581,9 +590,7 @@ impl qobject::AppBackend {
         let entries = &self.rust().entries;
         if let Some(entry) = entries.get(row as usize) {
             let path_str = entry.path.to_string_lossy().to_string();
-            if let Ok(mut clipboard) = arboard::Clipboard::new() {
-                let _ = clipboard.set_text(path_str);
-            }
+            set_clipboard(&path_str);
         }
     }
 
@@ -603,10 +610,8 @@ impl qobject::AppBackend {
                 _ => return,
             };
             if !hash.is_empty() {
-                if let Ok(mut clipboard) = arboard::Clipboard::new() {
-                    let _ = clipboard.set_text(hash);
+                    set_clipboard(hash);
                 }
-            }
         }
     }
 

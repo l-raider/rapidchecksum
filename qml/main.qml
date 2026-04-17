@@ -11,6 +11,25 @@ ApplicationWindow {
     height: 700
     visible: true
 
+    // ─── Menu bar ─────────────────────────────────────────────────────────
+    menuBar: MenuBar {
+        Menu {
+            title: "File"
+            MenuItem {
+                text: "Open Files…"
+                onTriggered: openFilesDialog.open()
+            }
+            MenuSeparator {}
+            MenuItem {
+                text: "Exit"
+                onTriggered: Qt.quit()
+            }
+        }
+    }
+
+    Shortcut { sequence: "Ctrl+O"; onActivated: openFilesDialog.open() }
+    Shortcut { sequence: "Ctrl+Q"; onActivated: Qt.quit() }
+
     // ─── File dialogs ─────────────────────────────────────────────────────
     Platform.FileDialog {
         id: openFilesDialog
@@ -141,10 +160,6 @@ ApplicationWindow {
         // Toolbar
         RowLayout {
             spacing: 4
-            Button {
-                text: "Open Files…"
-                onClicked: openFilesDialog.open()
-            }
             Button {
                 text: "Start Hashing"
                 enabled: !AppBackend.is_hashing
@@ -314,8 +329,10 @@ ApplicationWindow {
                                 color: model.isSelected ? palette.highlightedText : palette.text
                                 elide: Text.ElideRight
                                 verticalAlignment: Text.AlignVCenter
-                                font.family: (column > 0 && column < tableView.columns - 1) ? "Monospace" : ""
-                                font.pixelSize: 13
+                                Component.onCompleted: {
+                                    if (column > 0 && column < tableView.columns - 1)
+                                        font.family = "Monospace"
+                                }
                             }
 
                             MouseArea {

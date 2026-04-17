@@ -1,4 +1,5 @@
 #include <QtWidgets/QApplication>
+#include <QtGui/QClipboard>
 
 static int    s_argc    = 1;
 static char   s_argv0[] = "rapidchecksum";
@@ -17,5 +18,12 @@ extern "C" {
     int qt_app_exec()
     {
         return s_app ? s_app->exec() : 1;
+    }
+
+    void qt_set_clipboard(const char* text)
+    {
+        if (s_app) {
+            QApplication::clipboard()->setText(QString::fromUtf8(text));
+        }
     }
 }
