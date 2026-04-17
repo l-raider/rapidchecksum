@@ -1,0 +1,689 @@
+use std::path::PathBuf;
+use std::pin::Pin;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc;
+use std::sync::Arc;
+use std::time::Instant;
+
+use cxx_qt::{CxxQtType, Threading};
+
+use crate::config::AppConfig;
+use crate::fileio::write_hash_file;
+use crate::hasher::HashKind;
+use crate::model::FileEntry;
+use crate::worker::{spawn_hash_worker, FileTask, WorkerMessage};
+
+// Role IDs for QAbstractTableModel
+const ROLE_DISPLAY: i32 = 0;    // Qt::DisplayRole
+const ROLE_IS_ERROR: i32 = 256;  // Qt::UserRole
+const ROLE_IS_SELECTED: i32 = 257; // Qt::UserRole + 1
+
+#[cxx_qt::bridge]
+pub mod qobject {
+    unsafe extern "C++Qt" {
+        include!("QtCore/QAbstractTableModel");
+        #[qobject]
+        type QAbstractTableModel;
+    }
+
+    unsafe extern "C++" {
+        include!("cxx-qt-lib/qmodelindex.h");
+        type QModelIndex = cxx_qt_lib::QModelIndex;
+
+        include!("cxx-qt-lib/qvariant.h");
+        type QVariant = cxx_qt_lib::QVariant;
+
+        include!("cxx-qt-lib/qhash.h");
+        type QHash_i32_QByteArray = cxx_qt_lib::QHash<cxx_qt_lib::QHashPair_i32_QByteArray>;
+
+        include!("cxx-qt-lib/qstring.h");
+        type QString = cxx_qt_lib::QString;
+
+        include!("cxx-qt-lib/qstringlist.h");
+        type QStringList = cxx_qt_lib::QStringList;
+
+        include!("cxx-qt-lib/qvector.h");
+        type QVector_i32 = cxx_qt_lib::QVector<i32>;
+
+        include!("cxx-qt-lib/qbytearray.h");
+        type QByteArray = cxx_qt_lib::QByteArray;
+    }
+
+    unsafe extern "RustQt" {
+        #[qobject]
+        #[qml_element]
+        #[qml_singleton]
+        #[base = QAbstractTableModel]
+        #[qproperty(bool, is_hashing)]
+        #[qproperty(f32, file_progress)]
+        #[qproperty(f32, global_progress)]
+        #[qproperty(QString, status_text)]
+        #[qproperty(i32, selected_row)]
+        #[qproperty(bool, setting_crc32)]
+        #[qproperty(bool, setting_md5)]
+        #[qproperty(bool, setting_sha1)]
+        #[qproperty(bool, setting_sha256)]
+        #[qproperty(bool, setting_sha512)]
+        #[qproperty(QString, result_filename)]
+        #[qproperty(QString, result_crc32)]
+        #[qproperty(QString, result_md5)]
+        #[qproperty(QString, result_sha1)]
+        #[qproperty(QString, result_sha256)]
+        #[qproperty(QString, result_sha512)]
+        #[qproperty(QString, result_info)]
+        type AppBackend = super::AppBackendRust;
+
+        // QAbstractTableModel overrides
+        #[cxx_override]
+        fn data(self: &AppBackend, index: &QModelIndex, role: i32) -> QVariant;
+        #[cxx_override]
+        #[cxx_name = "rowCount"]
+        fn row_count(self: &AppBackend, parent: &QModelIndex) -> i32;
+        #[cxx_override]
+        #[cxx_name = "columnCount"]
+        fn column_count(self: &AppBackend, parent: &QModelIndex) -> i32;
+        #[cxx_override]
+        #[cxx_name = "roleNames"]
+        fn role_names(self: &AppBackend) -> QHash_i32_QByteArray;
+
+        // Inherited model manipulation methods
+        #[inherit]
+        #[cxx_name = "beginInsertRows"]
+        unsafe fn begin_insert_rows(
+            self: Pin<&mut AppBackend>,
+            parent: &QModelIndex,
+            first: i32,
+            last: i32,
+        );
+        #[inherit]
+        #[cxx_name = "endInsertRows"]
+        unsafe fn end_insert_rows(self: Pin<&mut AppBackend>);
+        #[inherit]
+        #[cxx_name = "beginRemoveRows"]
+        unsafe fn begin_remove_rows(
+            self: Pin<&mut AppBackend>,
+            parent: &QModelIndex,
+            first: i32,
+            last: i32,
+        );
+        #[inherit]
+        #[cxx_name = "endRemoveRows"]
+        unsafe fn end_remove_rows(self: Pin<&mut AppBackend>);
+        #[inherit]
+        #[cxx_name = "beginResetModel"]
+        unsafe fn begin_reset_model(self: Pin<&mut AppBackend>);
+        #[inherit]
+        #[cxx_name = "endResetModel"]
+        unsafe fn end_reset_model(self: Pin<&mut AppBackend>);
+
+        // Inherited signal
+        #[inherit]
+        #[qsignal]
+        #[cxx_name = "dataChanged"]
+        fn data_changed(
+            self: Pin<&mut AppBackend>,
+            top_left: &QModelIndex,
+            bottom_right: &QModelIndex,
+            roles: &QVector_i32,
+        );
+
+        // Needed to create QModelIndex for dataChanged / inherited methods
+        #[inherit]
+        #[cxx_name = "index"]
+        fn index(self: &AppBackend, row: i32, column: i32, parent: &QModelIndex) -> QModelIndex;
+
+        // Invokables
+        #[qinvokable]
+        fn add_files(self: Pin<&mut AppBackend>, paths: &QStringList);
+        #[qinvokable]
+        fn start_hashing(self: Pin<&mut AppBackend>);
+        #[qinvokable]
+        fn cancel_hashing(self: Pin<&mut AppBackend>);
+        #[qinvokable]
+        fn clear_list(self: Pin<&mut AppBackend>);
+        #[qinvokable]
+        fn remove_selected(self: Pin<&mut AppBackend>);
+        #[qinvokable]
+        fn select_row(self: Pin<&mut AppBackend>, row: i32);
+        #[qinvokable]
+        fn sort_by(self: Pin<&mut AppBackend>, column: i32, ascending: bool);
+        #[qinvokable]
+        fn copy_filepath(self: &AppBackend);
+        #[qinvokable]
+        fn copy_hash(self: &AppBackend, algo: i32);
+        #[qinvokable]
+        fn open_folder(self: &AppBackend);
+        #[qinvokable]
+        fn save_hash_file(self: &AppBackend, algo: i32, path: &QString);
+        #[qinvokable]
+        fn apply_settings(self: Pin<&mut AppBackend>);
+        #[qinvokable]
+        fn visible_columns(self: &AppBackend) -> QStringList;
+    }
+
+    impl cxx_qt::Threading for AppBackend {}
+}
+
+use cxx_qt_lib::{QByteArray, QHash, QHashPair_i32_QByteArray, QModelIndex, QString, QStringList, QVariant, QVector};
+
+pub struct AppBackendRust {
+    entries: Vec<FileEntry>,
+    visible_kinds: Vec<HashKind>,
+    config: AppConfig,
+    cancel_flag: Option<Arc<AtomicBool>>,
+    files_completed: usize,
+    total_files: usize,
+    start_time: Option<Instant>,
+
+    // Property backing fields
+    is_hashing: bool,
+    file_progress: f32,
+    global_progress: f32,
+    status_text: QString,
+    selected_row: i32,
+    setting_crc32: bool,
+    setting_md5: bool,
+    setting_sha1: bool,
+    setting_sha256: bool,
+    setting_sha512: bool,
+    result_filename: QString,
+    result_crc32: QString,
+    result_md5: QString,
+    result_sha1: QString,
+    result_sha256: QString,
+    result_sha512: QString,
+    result_info: QString,
+}
+
+impl Default for AppBackendRust {
+    fn default() -> Self {
+        let config = AppConfig::load();
+        Self {
+            entries: Vec::new(),
+            visible_kinds: config.enabled_hash_kinds(),
+            cancel_flag: None,
+            files_completed: 0,
+            total_files: 0,
+            start_time: None,
+            setting_crc32: config.hash_crc32,
+            setting_md5: config.hash_md5,
+            setting_sha1: config.hash_sha1,
+            setting_sha256: config.hash_sha256,
+            setting_sha512: config.hash_sha512,
+            config,
+            is_hashing: false,
+            file_progress: 0.0,
+            global_progress: 0.0,
+            status_text: QString::from("Ready"),
+            selected_row: -1,
+            result_filename: QString::default(),
+            result_crc32: QString::default(),
+            result_md5: QString::default(),
+            result_sha1: QString::default(),
+            result_sha256: QString::default(),
+            result_sha512: QString::default(),
+            result_info: QString::default(),
+        }
+    }
+}
+
+impl qobject::AppBackend {
+    fn row_count(&self, parent: &QModelIndex) -> i32 {
+        if parent.is_valid() {
+            return 0;
+        }
+        self.rust().entries.len() as i32
+    }
+
+    fn data(&self, index: &QModelIndex, role: i32) -> QVariant {
+        if !index.is_valid() {
+            return QVariant::default();
+        }
+        let row = index.row() as usize;
+        let col = index.column() as usize;
+        let rust = self.rust();
+        let entries = &rust.entries;
+        if row >= entries.len() {
+            return QVariant::default();
+        }
+        let entry = &entries[row];
+        let visible_kinds = &rust.visible_kinds;
+        let num_hash_cols = visible_kinds.len();
+        match role {
+            ROLE_DISPLAY => {
+                if col == 0 {
+                    QVariant::from(&QString::from(&entry.filename))
+                } else if col >= 1 && col <= num_hash_cols {
+                    let kind = visible_kinds[col - 1];
+                    QVariant::from(&QString::from(entry.hash_value(kind)))
+                } else if col == num_hash_cols + 1 {
+                    let text = if let Some(ref err) = entry.error {
+                        format!("Error: {}", err)
+                    } else {
+                        entry.info.clone()
+                    };
+                    QVariant::from(&QString::from(&text))
+                } else {
+                    QVariant::default()
+                }
+            }
+            ROLE_IS_ERROR => QVariant::from(&entry.error.is_some()),
+            ROLE_IS_SELECTED => QVariant::from(&(rust.selected_row == row as i32)),
+            _ => QVariant::default(),
+        }
+    }
+
+    fn role_names(&self) -> QHash<QHashPair_i32_QByteArray> {
+        let mut map = QHash::<QHashPair_i32_QByteArray>::default();
+        map.insert(ROLE_DISPLAY, QByteArray::from("display"));
+        map.insert(ROLE_IS_ERROR, QByteArray::from("isError"));
+        map.insert(ROLE_IS_SELECTED, QByteArray::from("isSelected"));
+        map
+    }
+
+    fn column_count(&self, parent: &QModelIndex) -> i32 {
+        if parent.is_valid() {
+            return 0;
+        }
+        (2 + self.rust().visible_kinds.len()) as i32
+    }
+
+    fn add_files(mut self: Pin<&mut Self>, paths: &QStringList) {
+        let mut new_paths: Vec<PathBuf> = Vec::new();
+        for i in 0..paths.len() {
+            if let Some(s) = paths.get(i) {
+                let path = PathBuf::from(s.to_string());
+                if path.is_file() {
+                    new_paths.push(path);
+                }
+            }
+        }
+        if new_paths.is_empty() {
+            return;
+        }
+
+        let start_row = self.rust().entries.len() as i32;
+        let end_row = start_row + new_paths.len() as i32 - 1;
+
+        let invalid = QModelIndex::default();
+        unsafe {
+            self.as_mut().begin_insert_rows(&invalid, start_row, end_row);
+        }
+        for path in new_paths {
+            let entry = FileEntry::new(path);
+            self.as_mut().rust_mut().entries.push(entry);
+        }
+        unsafe {
+            self.as_mut().end_insert_rows();
+        }
+
+        let count = self.rust().entries.len();
+        let text = format!("{} file(s) loaded", count);
+        self.as_mut().set_status_text(QString::from(&text));
+    }
+
+    fn start_hashing(mut self: Pin<&mut Self>) {
+        if self.rust().is_hashing {
+            return;
+        }
+        let kinds = self.rust().visible_kinds.clone();
+        if kinds.is_empty() {
+            self.as_mut()
+                .set_status_text(QString::from("No hash algorithms selected"));
+            return;
+        }
+
+        let tasks: Vec<FileTask> = self
+            .rust()
+            .entries
+            .iter()
+            .enumerate()
+            .map(|(i, e)| FileTask {
+                index: i,
+                path: e.path.clone(),
+            })
+            .collect();
+
+        if tasks.is_empty() {
+            self.as_mut()
+                .set_status_text(QString::from("No files to hash"));
+            return;
+        }
+
+        let cancel = Arc::new(AtomicBool::new(false));
+        let (tx, rx) = mpsc::channel::<WorkerMessage>();
+
+        let total = tasks.len();
+        self.as_mut().rust_mut().cancel_flag = Some(cancel.clone());
+        self.as_mut().rust_mut().files_completed = 0;
+        self.as_mut().rust_mut().total_files = total;
+        self.as_mut().rust_mut().start_time = Some(Instant::now());
+        self.as_mut().set_is_hashing(true);
+        self.as_mut().set_file_progress(0.0);
+        self.as_mut().set_global_progress(0.0);
+        self.as_mut()
+            .set_status_text(QString::from("Hashing..."));
+
+        let qt_thread = self.as_ref().get_ref().qt_thread();
+        spawn_hash_worker(tasks, kinds, tx, cancel);
+
+        std::thread::spawn(move || {
+            while let Ok(msg) = rx.recv() {
+                let msg_clone = msg.clone();
+                qt_thread
+                    .queue(move |mut backend: std::pin::Pin<&mut qobject::AppBackend>| {
+                        backend.as_mut().handle_worker_message(msg_clone);
+                    })
+                    .ok();
+            }
+        });
+    }
+
+    fn handle_worker_message(mut self: Pin<&mut Self>, msg: WorkerMessage) {
+        match msg {
+            WorkerMessage::FileProgress {
+                file_index,
+                bytes_read,
+                total_bytes,
+            } => {
+                let progress = if total_bytes > 0 {
+                    bytes_read as f32 / total_bytes as f32
+                } else {
+                    0.0
+                };
+                self.as_mut().set_file_progress(progress);
+
+                let completed = self.rust().files_completed;
+                let total = self.rust().total_files;
+                if total > 0 {
+                    let gp = (completed as f32 + progress) / total as f32;
+                    self.as_mut().set_global_progress(gp);
+                }
+
+                let text = format!(
+                    "Hashing file {}/{}...",
+                    file_index + 1,
+                    self.rust().total_files
+                );
+                self.as_mut().set_status_text(QString::from(&text));
+            }
+            WorkerMessage::FileComplete {
+                file_index,
+                hashes,
+                info,
+            } => {
+                if let Some(entry) = self.as_mut().rust_mut().entries.get_mut(file_index) {
+                    entry.hashes = hashes;
+                    entry.info = info;
+                    entry.error = None;
+                }
+                self.as_mut().rust_mut().files_completed += 1;
+
+                let roles = QVector::<i32>::default();
+                let col_count = (2 + self.rust().visible_kinds.len()) as i32;
+                let row_tl = self.index(file_index as i32, 0, &QModelIndex::default());
+                let row_br = self.index(file_index as i32, col_count - 1, &QModelIndex::default());
+                self.as_mut().data_changed(&row_tl, &row_br, &roles);
+            }
+            WorkerMessage::FileError { file_index, error } => {
+                if let Some(entry) = self.as_mut().rust_mut().entries.get_mut(file_index) {
+                    entry.error = Some(error);
+                }
+                self.as_mut().rust_mut().files_completed += 1;
+
+                let roles = QVector::<i32>::default();
+                let col_count = (2 + self.rust().visible_kinds.len()) as i32;
+                let row_tl = self.index(file_index as i32, 0, &QModelIndex::default());
+                let row_br = self.index(file_index as i32, col_count - 1, &QModelIndex::default());
+                self.as_mut().data_changed(&row_tl, &row_br, &roles);
+            }
+            WorkerMessage::AllComplete => {
+                let elapsed = self
+                    .rust()
+                    .start_time
+                    .map(|t| t.elapsed().as_secs_f32())
+                    .unwrap_or(0.0);
+                let total = self.rust().total_files;
+                let text = format!("Done! {} file(s) hashed in {:.1}s", total, elapsed);
+                self.as_mut().set_status_text(QString::from(&text));
+                self.as_mut().set_is_hashing(false);
+                self.as_mut().set_file_progress(1.0);
+                self.as_mut().set_global_progress(1.0);
+                self.as_mut().rust_mut().cancel_flag = None;
+            }
+        }
+    }
+
+    fn cancel_hashing(mut self: Pin<&mut Self>) {
+        if let Some(ref flag) = self.rust().cancel_flag {
+            flag.store(true, Ordering::SeqCst);
+        }
+        self.as_mut().set_is_hashing(false);
+        self.as_mut()
+            .set_status_text(QString::from("Cancelled"));
+    }
+
+    fn clear_list(mut self: Pin<&mut Self>) {
+        if self.rust().is_hashing {
+            return;
+        }
+        unsafe {
+            self.as_mut().begin_reset_model();
+        }
+        self.as_mut().rust_mut().entries.clear();
+        unsafe {
+            self.as_mut().end_reset_model();
+        }
+        self.as_mut().set_selected_row(-1);
+        self.as_mut()
+            .set_status_text(QString::from("Ready"));
+        self.as_mut().clear_result_panel();
+    }
+
+    fn clear_result_panel(mut self: Pin<&mut Self>) {
+        self.as_mut().set_result_filename(QString::default());
+        self.as_mut().set_result_crc32(QString::default());
+        self.as_mut().set_result_md5(QString::default());
+        self.as_mut().set_result_sha1(QString::default());
+        self.as_mut().set_result_sha256(QString::default());
+        self.as_mut().set_result_sha512(QString::default());
+        self.as_mut().set_result_info(QString::default());
+    }
+
+    fn remove_selected(mut self: Pin<&mut Self>) {
+        let row = self.rust().selected_row;
+        if row < 0 {
+            return;
+        }
+        let idx = row as usize;
+        if idx >= self.rust().entries.len() {
+            return;
+        }
+        let invalid = QModelIndex::default();
+        unsafe {
+            self.as_mut().begin_remove_rows(&invalid, row, row);
+        }
+        self.as_mut().rust_mut().entries.remove(idx);
+        unsafe {
+            self.as_mut().end_remove_rows();
+        }
+        self.as_mut().set_selected_row(-1);
+        self.as_mut().clear_result_panel();
+    }
+
+    fn select_row(mut self: Pin<&mut Self>, row: i32) {
+        self.as_mut().set_selected_row(row);
+
+        let idx = row as usize;
+        let entries = &self.rust().entries;
+        if idx < entries.len() {
+            let entry = &entries[idx];
+            let filename = entry.filename.clone();
+            let crc32 = entry.hash_value(HashKind::CRC32).to_string();
+            let md5 = entry.hash_value(HashKind::MD5).to_string();
+            let sha1 = entry.hash_value(HashKind::SHA1).to_string();
+            let sha256 = entry.hash_value(HashKind::SHA256).to_string();
+            let sha512 = entry.hash_value(HashKind::SHA512).to_string();
+            let info = if let Some(ref err) = entry.error {
+                format!("Error: {}", err)
+            } else {
+                entry.info.clone()
+            };
+            self.as_mut().set_result_filename(QString::from(&filename));
+            self.as_mut().set_result_crc32(QString::from(&crc32));
+            self.as_mut().set_result_md5(QString::from(&md5));
+            self.as_mut().set_result_sha1(QString::from(&sha1));
+            self.as_mut().set_result_sha256(QString::from(&sha256));
+            self.as_mut().set_result_sha512(QString::from(&sha512));
+            self.as_mut().set_result_info(QString::from(&info));
+        }
+
+        // Notify model that isSelected role changed for all rows
+        let count = self.rust().entries.len();
+        if count > 0 {
+            let col_count = (2 + self.rust().visible_kinds.len()) as i32;
+            let top = self.index(0, 0, &QModelIndex::default());
+            let bottom = self.index(count as i32 - 1, col_count - 1, &QModelIndex::default());
+            let mut roles = QVector::<i32>::default();
+            roles.append(ROLE_IS_SELECTED);
+            self.as_mut().data_changed(&top, &bottom, &roles);
+        }
+    }
+
+    fn sort_by(mut self: Pin<&mut Self>, column: i32, ascending: bool) {
+        let visible_kinds = self.rust().visible_kinds.clone();
+        let col = column as usize;
+        self.as_mut().rust_mut().entries.sort_by(|a, b| {
+            let a_val = sort_key(a, col, &visible_kinds);
+            let b_val = sort_key(b, col, &visible_kinds);
+            if ascending {
+                a_val.cmp(&b_val)
+            } else {
+                b_val.cmp(&a_val)
+            }
+        });
+
+        let count = self.rust().entries.len();
+        if count > 0 {
+            let col_count = (2 + self.rust().visible_kinds.len()) as i32;
+            let top = self.index(0, 0, &QModelIndex::default());
+            let bottom = self.index(count as i32 - 1, col_count - 1, &QModelIndex::default());
+            let roles = QVector::<i32>::default();
+            self.as_mut().data_changed(&top, &bottom, &roles);
+        }
+    }
+
+    fn copy_filepath(&self) {
+        let row = self.rust().selected_row;
+        if row < 0 {
+            return;
+        }
+        let entries = &self.rust().entries;
+        if let Some(entry) = entries.get(row as usize) {
+            let path_str = entry.path.to_string_lossy().to_string();
+            if let Ok(mut clipboard) = arboard::Clipboard::new() {
+                let _ = clipboard.set_text(path_str);
+            }
+        }
+    }
+
+    fn copy_hash(&self, algo: i32) {
+        let row = self.rust().selected_row;
+        if row < 0 {
+            return;
+        }
+        let entries = &self.rust().entries;
+        if let Some(entry) = entries.get(row as usize) {
+            let hash = match algo {
+                0 => entry.hash_value(HashKind::CRC32),
+                1 => entry.hash_value(HashKind::MD5),
+                2 => entry.hash_value(HashKind::SHA1),
+                3 => entry.hash_value(HashKind::SHA256),
+                4 => entry.hash_value(HashKind::SHA512),
+                _ => return,
+            };
+            if !hash.is_empty() {
+                if let Ok(mut clipboard) = arboard::Clipboard::new() {
+                    let _ = clipboard.set_text(hash);
+                }
+            }
+        }
+    }
+
+    fn open_folder(&self) {
+        let row = self.rust().selected_row;
+        if row < 0 {
+            return;
+        }
+        let entries = &self.rust().entries;
+        if let Some(entry) = entries.get(row as usize) {
+            if let Some(parent) = entry.path.parent() {
+                let _ = open::that(parent);
+            }
+        }
+    }
+
+    fn save_hash_file(&self, algo: i32, path: &QString) {
+        let kind = match algo {
+            0 => HashKind::CRC32,
+            1 => HashKind::MD5,
+            2 => HashKind::SHA1,
+            3 => HashKind::SHA256,
+            4 => HashKind::SHA512,
+            _ => return,
+        };
+        let output_path = PathBuf::from(path.to_string());
+        let _ = write_hash_file(&self.rust().entries, &output_path, kind);
+    }
+
+    fn apply_settings(mut self: Pin<&mut Self>) {
+        unsafe { self.as_mut().begin_reset_model(); }
+        {
+            let mut r = self.as_mut().rust_mut();
+            r.config.hash_crc32 = r.setting_crc32;
+            r.config.hash_md5 = r.setting_md5;
+            r.config.hash_sha1 = r.setting_sha1;
+            r.config.hash_sha256 = r.setting_sha256;
+            r.config.hash_sha512 = r.setting_sha512;
+            let _ = r.config.save();
+            r.visible_kinds = r.config.enabled_hash_kinds();
+        }
+        unsafe { self.as_mut().end_reset_model(); }
+    }
+
+    fn visible_columns(&self) -> QStringList {
+        let mut list = QStringList::default();
+        let kinds = self.rust().visible_kinds.clone();
+        for kind in &kinds {
+            let name = match kind {
+                HashKind::CRC32 => "CRC32",
+                HashKind::MD5 => "MD5",
+                HashKind::SHA1 => "SHA1",
+                HashKind::SHA256 => "SHA256",
+                HashKind::SHA512 => "SHA512",
+            };
+            list.append(QString::from(name));
+        }
+        list
+    }
+}
+
+fn sort_key(entry: &FileEntry, column: usize, visible_kinds: &[HashKind]) -> String {
+    if column == 0 {
+        return entry.filename.to_lowercase();
+    }
+    let info_col = 1 + visible_kinds.len();
+    if column == info_col {
+        return if let Some(ref err) = entry.error {
+            format!("error: {}", err.to_lowercase())
+        } else {
+            entry.info.to_lowercase()
+        };
+    }
+    let kind_idx = column - 1;
+    if let Some(&kind) = visible_kinds.get(kind_idx) {
+        entry.hash_value(kind).to_ascii_lowercase()
+    } else {
+        String::new()
+    }
+}

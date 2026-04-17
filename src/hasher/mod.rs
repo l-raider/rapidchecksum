@@ -30,6 +30,7 @@ impl HashKind {
     }
 
     /// File extension used for hash files (e.g. "sfv" for CRC32)
+    #[allow(dead_code)]
     pub fn file_extension(&self) -> &'static str {
         match self {
             HashKind::CRC32 => "sfv",

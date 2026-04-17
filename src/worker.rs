@@ -13,6 +13,7 @@ const READ_BUFFER_SIZE: usize = 64 * 1024; // 64 KB chunks
 
 /// Message sent from worker thread back to the UI thread.
 #[allow(dead_code)]
+#[derive(Clone)]
 pub enum WorkerMessage {
     /// Progress update for a single file: (file_index, bytes_read_so_far, total_bytes)
     FileProgress {
