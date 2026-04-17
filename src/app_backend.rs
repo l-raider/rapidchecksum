@@ -1,5 +1,3 @@
-#![allow(unused_attributes)]
-
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, Ordering};
