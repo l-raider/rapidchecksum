@@ -1,3 +1,5 @@
+#![allow(unused_attributes)]
+
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -74,13 +76,6 @@ pub mod qobject {
         #[qproperty(bool, setting_sha256)]
         #[qproperty(bool, setting_sha512)]
         #[qproperty(i32, file_count)]
-        #[qproperty(QString, result_filename)]
-        #[qproperty(QString, result_crc32)]
-        #[qproperty(QString, result_md5)]
-        #[qproperty(QString, result_sha1)]
-        #[qproperty(QString, result_sha256)]
-        #[qproperty(QString, result_sha512)]
-        #[qproperty(QString, result_info)]
         #[qproperty(QString, setting_rename_pattern)]
         type AppBackend = super::AppBackendRust;
 
@@ -201,14 +196,7 @@ pub struct AppBackendRust {
     setting_sha1: bool,
     setting_sha256: bool,
     setting_sha512: bool,
-    result_filename: QString,
-    result_crc32: QString,
-    result_md5: QString,
-    result_sha1: QString,
-    result_sha256: QString,
-    result_sha512: QString,
     file_count: i32,
-    result_info: QString,
     setting_rename_pattern: QString,
 }
 
@@ -235,13 +223,6 @@ impl Default for AppBackendRust {
             global_progress: 0.0,
             status_text: QString::from("Ready"),
             selected_row: -1,
-            result_filename: QString::default(),
-            result_crc32: QString::default(),
-            result_md5: QString::default(),
-            result_sha1: QString::default(),
-            result_sha256: QString::default(),
-            result_sha512: QString::default(),
-            result_info: QString::default(),
             setting_rename_pattern: QString::from(&rename_pattern),
         }
     }
@@ -499,17 +480,6 @@ impl qobject::AppBackend {
         self.as_mut().set_selected_row(-1);
         self.as_mut()
             .set_status_text(QString::from("Ready"));
-        self.as_mut().clear_result_panel();
-    }
-
-    fn clear_result_panel(mut self: Pin<&mut Self>) {
-        self.as_mut().set_result_filename(QString::default());
-        self.as_mut().set_result_crc32(QString::default());
-        self.as_mut().set_result_md5(QString::default());
-        self.as_mut().set_result_sha1(QString::default());
-        self.as_mut().set_result_sha256(QString::default());
-        self.as_mut().set_result_sha512(QString::default());
-        self.as_mut().set_result_info(QString::default());
     }
 
     fn remove_selected(mut self: Pin<&mut Self>) {
@@ -532,35 +502,10 @@ impl qobject::AppBackend {
         let new_count = self.rust().entries.len() as i32;
         self.as_mut().set_file_count(new_count);
         self.as_mut().set_selected_row(-1);
-        self.as_mut().clear_result_panel();
     }
 
     fn select_row(mut self: Pin<&mut Self>, row: i32) {
         self.as_mut().set_selected_row(row);
-
-        let idx = row as usize;
-        let entries = &self.rust().entries;
-        if idx < entries.len() {
-            let entry = &entries[idx];
-            let filename = entry.filename.clone();
-            let crc32 = entry.hash_value(HashKind::CRC32).to_string();
-            let md5 = entry.hash_value(HashKind::MD5).to_string();
-            let sha1 = entry.hash_value(HashKind::SHA1).to_string();
-            let sha256 = entry.hash_value(HashKind::SHA256).to_string();
-            let sha512 = entry.hash_value(HashKind::SHA512).to_string();
-            let info = if let Some(ref err) = entry.error {
-                format!("Error: {}", err)
-            } else {
-                entry.info.clone()
-            };
-            self.as_mut().set_result_filename(QString::from(&filename));
-            self.as_mut().set_result_crc32(QString::from(&crc32));
-            self.as_mut().set_result_md5(QString::from(&md5));
-            self.as_mut().set_result_sha1(QString::from(&sha1));
-            self.as_mut().set_result_sha256(QString::from(&sha256));
-            self.as_mut().set_result_sha512(QString::from(&sha512));
-            self.as_mut().set_result_info(QString::from(&info));
-        }
 
         // Notify model that isSelected role changed for all rows
         let count = self.rust().entries.len();
@@ -673,16 +618,8 @@ impl qobject::AppBackend {
 
     fn visible_columns(&self) -> QStringList {
         let mut list = QStringList::default();
-        let kinds = self.rust().visible_kinds.clone();
-        for kind in &kinds {
-            let name = match kind {
-                HashKind::CRC32 => "CRC32",
-                HashKind::MD5 => "MD5",
-                HashKind::SHA1 => "SHA1",
-                HashKind::SHA256 => "SHA256",
-                HashKind::SHA512 => "SHA512",
-            };
-            list.append(QString::from(name));
+        for kind in &self.rust().visible_kinds {
+            list.append(QString::from(kind.name()));
         }
         list
     }
