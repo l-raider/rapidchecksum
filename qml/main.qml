@@ -17,6 +17,7 @@ ApplicationWindow {
             title: "File"
             MenuItem {
                 text: "Open Files…"
+                enabled: !AppBackend.is_hashing
                 onTriggered: openFilesDialog.open()
             }
             MenuSeparator {}
