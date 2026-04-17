@@ -19,10 +19,16 @@ pub struct AppConfig {
     pub hash_sha256: bool,
     #[serde(default = "default_true")]
     pub hash_sha512: bool,
+    #[serde(default = "default_rename_pattern")]
+    pub rename_pattern: String,
 }
 
 fn default_true() -> bool {
     true
+}
+
+fn default_rename_pattern() -> String {
+    "%FILENAME%.%FILEEXT%".to_string()
 }
 
 impl Default for AppConfig {
@@ -33,6 +39,7 @@ impl Default for AppConfig {
             hash_sha1: true,
             hash_sha256: true,
             hash_sha512: true,
+            rename_pattern: default_rename_pattern(),
         }
     }
 }

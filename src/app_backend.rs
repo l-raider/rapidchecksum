@@ -81,6 +81,7 @@ pub mod qobject {
         #[qproperty(QString, result_sha256)]
         #[qproperty(QString, result_sha512)]
         #[qproperty(QString, result_info)]
+        #[qproperty(QString, setting_rename_pattern)]
         type AppBackend = super::AppBackendRust;
 
         // QAbstractTableModel overrides
@@ -169,6 +170,10 @@ pub mod qobject {
         fn apply_settings(self: Pin<&mut AppBackend>);
         #[qinvokable]
         fn visible_columns(self: &AppBackend) -> QStringList;
+        #[qinvokable]
+        fn apply_rename_settings(self: Pin<&mut AppBackend>);
+        #[qinvokable]
+        fn rename_files(self: Pin<&mut AppBackend>);
     }
 
     impl cxx_qt::Threading for AppBackend {}
@@ -204,11 +209,13 @@ pub struct AppBackendRust {
     result_sha512: QString,
     file_count: i32,
     result_info: QString,
+    setting_rename_pattern: QString,
 }
 
 impl Default for AppBackendRust {
     fn default() -> Self {
         let config = AppConfig::load();
+        let rename_pattern = config.rename_pattern.clone();
         Self {
             entries: Vec::new(),
             visible_kinds: config.enabled_hash_kinds(),
@@ -235,6 +242,7 @@ impl Default for AppBackendRust {
             result_sha256: QString::default(),
             result_sha512: QString::default(),
             result_info: QString::default(),
+            setting_rename_pattern: QString::from(&rename_pattern),
         }
     }
 }
@@ -677,6 +685,92 @@ impl qobject::AppBackend {
             list.append(QString::from(name));
         }
         list
+    }
+
+    fn apply_rename_settings(mut self: Pin<&mut Self>) {
+        let pattern = self.rust().setting_rename_pattern.to_string();
+        self.as_mut().rust_mut().config.rename_pattern = pattern;
+        let _ = self.rust().config.save();
+    }
+
+    fn rename_files(mut self: Pin<&mut Self>) {
+        if self.rust().is_hashing {
+            return;
+        }
+
+        struct RenameOp {
+            index: usize,
+            old_path: PathBuf,
+            new_path: PathBuf,
+            new_filename: String,
+        }
+
+        let pattern = self.rust().config.rename_pattern.clone();
+
+        let ops: Vec<RenameOp> = {
+            let r = self.rust();
+            (0..r.entries.len()).filter_map(|i| {
+                let entry = &r.entries[i];
+                // Only rename entries that have been hashed and have no error
+                if entry.hashes.is_empty() || entry.error.is_some() {
+                    return None;
+                }
+                let path = entry.path.clone();
+                let stem = path.file_stem()
+                    .map(|s| s.to_string_lossy().to_string())
+                    .unwrap_or_default();
+                let ext = path.extension()
+                    .map(|s| s.to_string_lossy().to_string())
+                    .unwrap_or_default();
+
+                let new_name = pattern
+                    .replace("%FILENAME%", &stem)
+                    .replace("%FILEEXT%", &ext)
+                    .replace("%CRC%", entry.hash_value(HashKind::CRC32))
+                    .replace("%MD5%", entry.hash_value(HashKind::MD5))
+                    .replace("%SHA1%", entry.hash_value(HashKind::SHA1))
+                    .replace("%SHA256%", entry.hash_value(HashKind::SHA256))
+                    .replace("%SHA512%", entry.hash_value(HashKind::SHA512));
+
+                let parent = path.parent()?;
+                let new_path = parent.join(&new_name);
+                if new_path == path {
+                    return None;
+                }
+                Some(RenameOp { index: i, old_path: path, new_path, new_filename: new_name })
+            }).collect()
+        };
+
+        let mut renamed = 0usize;
+        let mut error_count = 0usize;
+        for op in ops {
+            match std::fs::rename(&op.old_path, &op.new_path) {
+                Ok(()) => {
+                    if let Some(e) = self.as_mut().rust_mut().entries.get_mut(op.index) {
+                        e.path = op.new_path;
+                        e.filename = op.new_filename;
+                    }
+                    renamed += 1;
+                }
+                Err(_) => error_count += 1,
+            }
+        }
+
+        let msg = if error_count > 0 {
+            format!("{} file(s) renamed, {} failed", renamed, error_count)
+        } else {
+            format!("{} file(s) renamed", renamed)
+        };
+        self.as_mut().set_status_text(QString::from(&msg));
+
+        let count = self.rust().entries.len();
+        if count > 0 {
+            let col_count = (2 + self.rust().visible_kinds.len()) as i32;
+            let top = self.index(0, 0, &QModelIndex::default());
+            let bottom = self.index(count as i32 - 1, col_count - 1, &QModelIndex::default());
+            let roles = QVector::<i32>::default();
+            self.as_mut().data_changed(&top, &bottom, &roles);
+        }
     }
 }
 

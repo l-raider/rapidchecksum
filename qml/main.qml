@@ -38,6 +38,13 @@ ApplicationWindow {
                     hashAlgorithmsDialog.open()
                 }
             }
+            MenuItem {
+                text: "File Renaming…"
+                onTriggered: {
+                    renamePatternField.text = AppBackend.setting_rename_pattern
+                    fileRenamingDialog.open()
+                }
+            }
         }
     }
 
@@ -165,6 +172,68 @@ ApplicationWindow {
         }
     }
 
+    // ─── File Renaming dialog ─────────────────────────────────────────────
+    Dialog {
+        id: fileRenamingDialog
+        title: "Settings — File Renaming"
+        modal: true
+        anchors.centerIn: parent
+        standardButtons: Dialog.Ok | Dialog.Cancel
+
+        ColumnLayout {
+            spacing: 8
+            width: 440
+
+            Label { text: "Rename pattern:" }
+            TextField {
+                id: renamePatternField
+                Layout.fillWidth: true
+                placeholderText: "%FILENAME%.%FILEEXT%"
+            }
+
+            Label { text: "Available tags:"; font.bold: true }
+
+            GridLayout {
+                columns: 2
+                columnSpacing: 12
+                rowSpacing: 3
+                Layout.fillWidth: true
+
+                Label { text: "%FILENAME%"; font.family: "monospace" }
+                Label { text: "Original filename (without extension)" }
+
+                Label { text: "%FILEEXT%"; font.family: "monospace" }
+                Label { text: "File extension (without dot)" }
+
+                Label { text: "%CRC%"; font.family: "monospace" }
+                Label { text: "CRC32 hash" }
+
+                Label { text: "%MD5%"; font.family: "monospace" }
+                Label { text: "MD5 hash" }
+
+                Label { text: "%SHA1%"; font.family: "monospace" }
+                Label { text: "SHA1 hash" }
+
+                Label { text: "%SHA256%"; font.family: "monospace" }
+                Label { text: "SHA256 hash" }
+
+                Label { text: "%SHA512%"; font.family: "monospace" }
+                Label { text: "SHA512 hash" }
+            }
+
+            Label {
+                text: "Example: %FILENAME%_%CRC%.%FILEEXT%"
+                font.italic: true
+                color: palette.mid
+            }
+        }
+
+        onAccepted: {
+            AppBackend.setting_rename_pattern = renamePatternField.text
+            AppBackend.apply_rename_settings()
+        }
+    }
+
     // ─── Main layout ──────────────────────────────────────────────────────
     ColumnLayout {
         anchors.fill: parent
@@ -193,6 +262,11 @@ ApplicationWindow {
                 text: "Remove Selected"
                 enabled: !AppBackend.is_hashing && AppBackend.selected_row >= 0
                 onClicked: AppBackend.remove_selected()
+            }
+            Button {
+                text: "Rename Files"
+                enabled: !AppBackend.is_hashing && AppBackend.file_count > 0
+                onClicked: AppBackend.rename_files()
             }
             Item { Layout.fillWidth: true }
         }
