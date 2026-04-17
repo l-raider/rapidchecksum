@@ -674,6 +674,10 @@ impl qobject::AppBackend {
 
                 let parent = path.parent()?;
                 let new_path = parent.join(&new_name);
+                // Ensure the new path stays within the original directory
+                if !new_path.starts_with(parent) {
+                    return None;
+                }
                 if new_path == path {
                     return None;
                 }
