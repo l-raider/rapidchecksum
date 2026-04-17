@@ -178,11 +178,13 @@ ApplicationWindow {
         title: "Settings — File Renaming"
         modal: true
         anchors.centerIn: parent
+        implicitWidth: 480
         standardButtons: Dialog.Ok | Dialog.Cancel
 
         ColumnLayout {
             spacing: 8
-            width: 440
+            anchors.left: parent.left
+            anchors.right: parent.right
 
             Label { text: "Rename pattern:" }
             TextField {
