@@ -432,6 +432,8 @@ impl qobject::AppBackend {
             WorkerMessage::FileError { file_index, error } => {
                 if let Some(entry) = self.as_mut().rust_mut().entries.get_mut(file_index) {
                     entry.error = Some(error);
+                    entry.hashes.clear();
+                    entry.info = String::new();
                 }
                 self.as_mut().rust_mut().files_completed += 1;
 
