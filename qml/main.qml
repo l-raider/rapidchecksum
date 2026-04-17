@@ -25,6 +25,20 @@ ApplicationWindow {
                 onTriggered: Qt.quit()
             }
         }
+        Menu {
+            title: "Settings"
+            MenuItem {
+                text: "Hash Algorithms…"
+                onTriggered: {
+                    chkCrc32.checked  = AppBackend.setting_crc32
+                    chkMd5.checked    = AppBackend.setting_md5
+                    chkSha1.checked   = AppBackend.setting_sha1
+                    chkSha256.checked = AppBackend.setting_sha256
+                    chkSha512.checked = AppBackend.setting_sha512
+                    hashAlgorithmsDialog.open()
+                }
+            }
+        }
     }
 
     Shortcut { sequence: "Ctrl+O"; onActivated: openFilesDialog.open() }
@@ -58,9 +72,9 @@ ApplicationWindow {
         }
     }
 
-    // ─── Settings dialog ─────────────────────────────────────────────────
+    // ─── Hash Algorithms dialog ───────────────────────────────────────────
     Dialog {
-        id: settingsDialog
+        id: hashAlgorithmsDialog
         title: "Settings — Hash Algorithms"
         modal: true
         anchors.centerIn: parent
@@ -162,7 +176,7 @@ ApplicationWindow {
             spacing: 4
             Button {
                 text: "Start Hashing"
-                enabled: !AppBackend.is_hashing
+                enabled: !AppBackend.is_hashing && AppBackend.file_count > 0
                 onClicked: AppBackend.start_hashing()
             }
             Button {
@@ -172,7 +186,7 @@ ApplicationWindow {
             }
             Button {
                 text: "Clear List"
-                enabled: !AppBackend.is_hashing
+                enabled: !AppBackend.is_hashing && AppBackend.file_count > 0
                 onClicked: AppBackend.clear_list()
             }
             Button {
@@ -181,17 +195,6 @@ ApplicationWindow {
                 onClicked: AppBackend.remove_selected()
             }
             Item { Layout.fillWidth: true }
-            Button {
-                text: "Settings…"
-                onClicked: {
-                    chkCrc32.checked  = AppBackend.setting_crc32
-                    chkMd5.checked    = AppBackend.setting_md5
-                    chkSha1.checked   = AppBackend.setting_sha1
-                    chkSha256.checked = AppBackend.setting_sha256
-                    chkSha512.checked = AppBackend.setting_sha512
-                    settingsDialog.open()
-                }
-            }
         }
 
         // Progress bars

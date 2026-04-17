@@ -73,6 +73,7 @@ pub mod qobject {
         #[qproperty(bool, setting_sha1)]
         #[qproperty(bool, setting_sha256)]
         #[qproperty(bool, setting_sha512)]
+        #[qproperty(i32, file_count)]
         #[qproperty(QString, result_filename)]
         #[qproperty(QString, result_crc32)]
         #[qproperty(QString, result_md5)]
@@ -201,6 +202,7 @@ pub struct AppBackendRust {
     result_sha1: QString,
     result_sha256: QString,
     result_sha512: QString,
+    file_count: i32,
     result_info: QString,
 }
 
@@ -220,6 +222,7 @@ impl Default for AppBackendRust {
             setting_sha256: config.hash_sha256,
             setting_sha512: config.hash_sha512,
             config,
+            file_count: 0,
             is_hashing: false,
             file_progress: 0.0,
             global_progress: 0.0,
@@ -327,6 +330,7 @@ impl qobject::AppBackend {
         }
 
         let count = self.rust().entries.len();
+        self.as_mut().set_file_count(count as i32);
         let text = format!("{} file(s) loaded", count);
         self.as_mut().set_status_text(QString::from(&text));
     }
@@ -483,6 +487,7 @@ impl qobject::AppBackend {
         unsafe {
             self.as_mut().end_reset_model();
         }
+        self.as_mut().set_file_count(0);
         self.as_mut().set_selected_row(-1);
         self.as_mut()
             .set_status_text(QString::from("Ready"));
@@ -516,6 +521,8 @@ impl qobject::AppBackend {
         unsafe {
             self.as_mut().end_remove_rows();
         }
+        let new_count = self.rust().entries.len() as i32;
+        self.as_mut().set_file_count(new_count);
         self.as_mut().set_selected_row(-1);
         self.as_mut().clear_result_panel();
     }
