@@ -376,6 +376,7 @@ ApplicationWindow {
 
                     delegate: Rectangle {
                         required property int column
+                        implicitWidth: 100
                         implicitHeight: 26
                         color: palette.button
 
