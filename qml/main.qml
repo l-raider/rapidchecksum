@@ -152,11 +152,11 @@ ApplicationWindow {
         }
         Menu {
             title: "Copy Hash"
-            MenuItem { text: "CRC32";  onTriggered: AppBackend.copy_hash(0) }
-            MenuItem { text: "MD5";    onTriggered: AppBackend.copy_hash(1) }
-            MenuItem { text: "SHA1";   onTriggered: AppBackend.copy_hash(2) }
-            MenuItem { text: "SHA256"; onTriggered: AppBackend.copy_hash(3) }
-            MenuItem { text: "SHA512"; onTriggered: AppBackend.copy_hash(4) }
+            MenuItem { text: "CRC32";  visible: AppBackend.setting_crc32;  onTriggered: AppBackend.copy_hash(0) }
+            MenuItem { text: "MD5";    visible: AppBackend.setting_md5;    onTriggered: AppBackend.copy_hash(1) }
+            MenuItem { text: "SHA1";   visible: AppBackend.setting_sha1;   onTriggered: AppBackend.copy_hash(2) }
+            MenuItem { text: "SHA256"; visible: AppBackend.setting_sha256; onTriggered: AppBackend.copy_hash(3) }
+            MenuItem { text: "SHA512"; visible: AppBackend.setting_sha512; onTriggered: AppBackend.copy_hash(4) }
         }
         MenuItem {
             text: "Open Containing Folder"
@@ -167,22 +167,27 @@ ApplicationWindow {
             title: "Save Hash File"
             MenuItem {
                 text: "CRC32 / SFV"
+                visible: AppBackend.setting_crc32
                 onTriggered: { saveHashDialog.hashAlgo = 0; saveHashDialog.open() }
             }
             MenuItem {
                 text: "MD5"
+                visible: AppBackend.setting_md5
                 onTriggered: { saveHashDialog.hashAlgo = 1; saveHashDialog.open() }
             }
             MenuItem {
                 text: "SHA1"
+                visible: AppBackend.setting_sha1
                 onTriggered: { saveHashDialog.hashAlgo = 2; saveHashDialog.open() }
             }
             MenuItem {
                 text: "SHA256"
+                visible: AppBackend.setting_sha256
                 onTriggered: { saveHashDialog.hashAlgo = 3; saveHashDialog.open() }
             }
             MenuItem {
                 text: "SHA512"
+                visible: AppBackend.setting_sha512
                 onTriggered: { saveHashDialog.hashAlgo = 4; saveHashDialog.open() }
             }
         }
