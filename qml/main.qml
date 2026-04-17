@@ -231,7 +231,23 @@ ApplicationWindow {
                     headerModel.append({ "colName": vc[i] })
                 }
                 headerModel.append({ "colName": "Info" })
-                tableView.forceLayout()
+                Qt.callLater(initColumnWidths)
+            }
+
+            function initColumnWidths() {
+                var w = tableView.width
+                var cols = tableView.columns
+                if (cols <= 0 || w <= 0) return
+                var filenameW = 3.0
+                var infoW     = 1.5
+                var hashW     = 2.0
+                var hashCols  = Math.max(0, cols - 2)
+                var total     = filenameW + infoW + hashCols * hashW
+                for (var i = 0; i < cols; i++) {
+                    if (i === 0)        tableView.setColumnWidth(i, w * filenameW / total)
+                    else if (i === cols - 1) tableView.setColumnWidth(i, w * infoW / total)
+                    else                tableView.setColumnWidth(i, w * hashW / total)
+                }
             }
 
             Component.onCompleted: refreshHeaders()
@@ -310,21 +326,7 @@ ApplicationWindow {
                     ScrollBar.vertical: ScrollBar {}
                     ScrollBar.horizontal: ScrollBar {}
 
-                    columnWidthProvider: function(column) {
-                        var w = tableView.width
-                        var cols = tableView.columns
-                        if (cols <= 0 || w <= 0) return 100
-                        var filenameW = 3.0
-                        var infoW     = 1.5
-                        var hashW     = 2.0
-                        var hashCols  = Math.max(0, cols - 2)
-                        var total     = filenameW + infoW + hashCols * hashW
-                        if (column === 0)        return w * filenameW / total
-                        if (column === cols - 1) return w * infoW     / total
-                        return w * hashW / total
-                    }
-
-                    onWidthChanged: forceLayout()
+                    onWidthChanged: Qt.callLater(fileListItem.initColumnWidths)
 
                     delegate: Rectangle {
                         required property int row
