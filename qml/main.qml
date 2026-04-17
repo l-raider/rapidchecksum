@@ -20,6 +20,11 @@ ApplicationWindow {
                 enabled: !AppBackend.is_hashing
                 onTriggered: openFilesDialog.open()
             }
+            MenuItem {
+                text: "Open Folder…"
+                enabled: !AppBackend.is_hashing
+                onTriggered: openFolderDialog.open()
+            }
             MenuSeparator {}
             MenuItem {
                 text: "Exit"
@@ -65,6 +70,16 @@ ApplicationWindow {
                 paths.push(p)
             }
             AppBackend.add_files(paths)
+        }
+    }
+
+    Platform.FolderDialog {
+        id: openFolderDialog
+        title: "Select folder to add"
+        onAccepted: {
+            var p = decodeURIComponent(folder.toString())
+            if (p.startsWith("file://")) p = p.substring(7)
+            AppBackend.add_folder(p)
         }
     }
 

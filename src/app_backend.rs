@@ -140,6 +140,8 @@ pub mod qobject {
         #[qinvokable]
         fn add_files(self: Pin<&mut AppBackend>, paths: &QStringList);
         #[qinvokable]
+        fn add_folder(self: Pin<&mut AppBackend>, folder_path: &QString);
+        #[qinvokable]
         fn start_hashing(self: Pin<&mut AppBackend>);
         #[qinvokable]
         fn cancel_hashing(self: Pin<&mut AppBackend>);
@@ -297,6 +299,38 @@ impl qobject::AppBackend {
                 }
             }
         }
+        if new_paths.is_empty() {
+            return;
+        }
+
+        let start_row = self.rust().entries.len() as i32;
+        let end_row = start_row + new_paths.len() as i32 - 1;
+
+        let invalid = QModelIndex::default();
+        unsafe {
+            self.as_mut().begin_insert_rows(&invalid, start_row, end_row);
+        }
+        for path in new_paths {
+            let entry = FileEntry::new(path);
+            self.as_mut().rust_mut().entries.push(entry);
+        }
+        unsafe {
+            self.as_mut().end_insert_rows();
+        }
+
+        let count = self.rust().entries.len();
+        self.as_mut().set_file_count(count as i32);
+        let text = format!("{} file(s) loaded", count);
+        self.as_mut().set_status_text(QString::from(&text));
+    }
+
+    fn add_folder(mut self: Pin<&mut Self>, folder_path: &QString) {
+        if self.rust().is_hashing {
+            return;
+        }
+        let path = PathBuf::from(folder_path.to_string());
+        let mut new_paths: Vec<PathBuf> = Vec::new();
+        collect_files_recursive(&path, &mut new_paths);
         if new_paths.is_empty() {
             return;
         }
@@ -744,5 +778,19 @@ fn sort_key(entry: &FileEntry, column: usize, visible_kinds: &[HashKind]) -> Str
         entry.hash_value(kind).to_ascii_lowercase()
     } else {
         String::new()
+    }
+}
+
+fn collect_files_recursive(dir: &std::path::Path, out: &mut Vec<PathBuf>) {
+    let Ok(read_dir) = std::fs::read_dir(dir) else { return };
+    let mut entries: Vec<_> = read_dir.filter_map(|e| e.ok()).collect();
+    entries.sort_by_key(|e| e.file_name());
+    for entry in entries {
+        let path = entry.path();
+        if path.is_dir() {
+            collect_files_recursive(&path, out);
+        } else if path.is_file() {
+            out.push(path);
+        }
     }
 }
