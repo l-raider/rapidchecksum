@@ -523,6 +523,9 @@ impl qobject::AppBackend {
     }
 
     fn sort_by(mut self: Pin<&mut Self>, column: i32, ascending: bool) {
+        if self.rust().is_hashing {
+            return;
+        }
         let visible_kinds = self.rust().visible_kinds.clone();
         let col = column as usize;
         self.as_mut().rust_mut().entries.sort_by(|a, b| {
