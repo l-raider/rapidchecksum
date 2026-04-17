@@ -216,218 +216,147 @@ ApplicationWindow {
             elide: Text.ElideRight
         }
 
-        // Split: file list (left) + result panel (right)
-        SplitView {
+        // ── File list ────────────────────────────────────────────────────
+        Item {
+            id: fileListItem
             Layout.fillWidth: true
             Layout.fillHeight: true
-            orientation: Qt.Horizontal
 
-            // ── File list ────────────────────────────────────────────────
-            Item {
-                id: fileListItem
-                SplitView.minimumWidth: 300
-                SplitView.fillWidth: true
-
-                // Populate header model from visible columns
-                function refreshHeaders() {
-                    headerModel.clear()
-                    headerModel.append({ "colName": "Filename" })
-                    var vc = AppBackend.visible_columns()
-                    for (var i = 0; i < vc.length; i++) {
-                        headerModel.append({ "colName": vc[i] })
-                    }
-                    headerModel.append({ "colName": "Info" })
-                    tableView.forceLayout()
+            // Populate header model from visible columns
+            function refreshHeaders() {
+                headerModel.clear()
+                headerModel.append({ "colName": "Filename" })
+                var vc = AppBackend.visible_columns()
+                for (var i = 0; i < vc.length; i++) {
+                    headerModel.append({ "colName": vc[i] })
                 }
-
-                Component.onCompleted: refreshHeaders()
-
-                ListModel { id: headerModel }
-
-                ColumnLayout {
-                    anchors.fill: parent
-                    spacing: 0
-
-                    // Sortable, resizable column header
-                    HorizontalHeaderView {
-                        id: headerView
-                        Layout.fillWidth: true
-                        syncView: tableView
-                        resizableColumns: true
-                        model: headerModel
-
-                        property int sortColumn: -1
-                        property bool sortAscending: true
-
-                        delegate: Rectangle {
-                            required property int column
-                            implicitWidth: column === 0 ? 220 : (column === headerView.columns - 1 ? 110 : 130)
-                            implicitHeight: 26
-                            color: palette.button
-
-                            // Right-edge column divider
-                            Rectangle {
-                                anchors.right: parent.right
-                                width: 1
-                                height: parent.height
-                                color: palette.mid
-                            }
-
-                            RowLayout {
-                                anchors { fill: parent; leftMargin: 5; rightMargin: 5 }
-                                spacing: 2
-                                Label {
-                                    Layout.fillWidth: true
-                                    text: model.colName
-                                    font.bold: true
-                                    color: palette.buttonText
-                                    elide: Text.ElideRight
-                                }
-                                Text {
-                                    visible: column === headerView.sortColumn
-                                    text: headerView.sortAscending ? "▲" : "▼"
-                                    color: palette.buttonText
-                                    font.pixelSize: 9
-                                }
-                            }
-
-                            MouseArea {
-                                // Leave room for the resize handle on the right
-                                anchors { fill: parent; rightMargin: 8 }
-                                onClicked: {
-                                    if (headerView.sortColumn === column) {
-                                        headerView.sortAscending = !headerView.sortAscending
-                                    } else {
-                                        headerView.sortColumn = column
-                                        headerView.sortAscending = true
-                                    }
-                                    AppBackend.sort_by(column, headerView.sortAscending)
-                                }
-                            }
-                        }
-                    }
-
-                    // File table
-                    TableView {
-                        id: tableView
-                        Layout.fillWidth: true
-                        Layout.fillHeight: true
-                        model: AppBackend
-                        clip: true
-                        ScrollBar.vertical: ScrollBar {}
-                        ScrollBar.horizontal: ScrollBar {}
-
-                        delegate: Rectangle {
-                            required property int row
-                            required property int column
-                            implicitWidth: column === 0 ? 220 : (column === tableView.columns - 1 ? 110 : 130)
-                            implicitHeight: 28
-                            color: model.isSelected ? palette.highlight
-                                 : model.isError    ? Qt.rgba(0.37, 0.07, 0.07, 1)
-                                 : (row % 2 === 0   ? palette.base : palette.alternateBase)
-
-                            Text {
-                                anchors { fill: parent; leftMargin: 6; rightMargin: 4 }
-                                text: model.display
-                                color: model.isSelected ? palette.highlightedText : palette.text
-                                elide: Text.ElideRight
-                                verticalAlignment: Text.AlignVCenter
-                                Component.onCompleted: {
-                                    if (column > 0 && column < tableView.columns - 1)
-                                        font.family = "Monospace"
-                                }
-                            }
-
-                            MouseArea {
-                                anchors.fill: parent
-                                acceptedButtons: Qt.LeftButton | Qt.RightButton
-                                onClicked: function(mouse) {
-                                    AppBackend.select_row(row)
-                                    if (mouse.button === Qt.RightButton) contextMenu.popup()
-                                }
-                                onPressAndHold: {
-                                    AppBackend.select_row(row)
-                                    contextMenu.popup()
-                                }
-                            }
-                        }
-                    }
-                }
+                headerModel.append({ "colName": "Info" })
+                tableView.forceLayout()
             }
 
-            // ── Result panel (right) ─────────────────────────────────────
-            Pane {
-                SplitView.minimumWidth: 220
-                SplitView.preferredWidth: 280
+            Component.onCompleted: refreshHeaders()
 
-                ScrollView {
-                    anchors.fill: parent
-                    ColumnLayout {
-                        width: parent.width
-                        spacing: 6
+            ListModel { id: headerModel }
 
-                        Label { text: "Selected File"; font.bold: true }
+            ColumnLayout {
+                anchors.fill: parent
+                spacing: 0
 
-                        Label { text: "Filename:"; font.bold: true }
-                        TextEdit {
-                            text: AppBackend.result_filename
-                            readOnly: true
-                            wrapMode: TextEdit.Wrap
-                            Layout.fillWidth: true
+                // Sortable, resizable column header
+                HorizontalHeaderView {
+                    id: headerView
+                    Layout.fillWidth: true
+                    syncView: tableView
+                    resizableColumns: true
+                    model: headerModel
+
+                    property int sortColumn: -1
+                    property bool sortAscending: true
+
+                    delegate: Rectangle {
+                        required property int column
+                        implicitHeight: 26
+                        color: palette.button
+
+                        // Right-edge column divider
+                        Rectangle {
+                            anchors.right: parent.right
+                            width: 1
+                            height: parent.height
+                            color: palette.mid
                         }
 
-                        Label { text: "CRC32:"; font.bold: true; visible: AppBackend.setting_crc32 }
-                        TextEdit {
-                            visible: AppBackend.setting_crc32
-                            text: AppBackend.result_crc32
-                            readOnly: true
-                            font.family: "monospace"
-                            Layout.fillWidth: true
+                        RowLayout {
+                            anchors { fill: parent; leftMargin: 5; rightMargin: 5 }
+                            spacing: 2
+                            Label {
+                                Layout.fillWidth: true
+                                text: model.colName
+                                font.bold: true
+                                color: palette.buttonText
+                                elide: Text.ElideRight
+                            }
+                            Text {
+                                visible: column === headerView.sortColumn
+                                text: headerView.sortAscending ? "▲" : "▼"
+                                color: palette.buttonText
+                                font.pixelSize: 9
+                            }
                         }
 
-                        Label { text: "MD5:"; font.bold: true; visible: AppBackend.setting_md5 }
-                        TextEdit {
-                            visible: AppBackend.setting_md5
-                            text: AppBackend.result_md5
-                            readOnly: true
-                            font.family: "monospace"
-                            Layout.fillWidth: true
+                        MouseArea {
+                            // Leave room for the resize handle on the right
+                            anchors { fill: parent; rightMargin: 8 }
+                            onClicked: {
+                                if (headerView.sortColumn === column) {
+                                    headerView.sortAscending = !headerView.sortAscending
+                                } else {
+                                    headerView.sortColumn = column
+                                    headerView.sortAscending = true
+                                }
+                                AppBackend.sort_by(column, headerView.sortAscending)
+                            }
+                        }
+                    }
+                }
+
+                // File table
+                TableView {
+                    id: tableView
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    model: AppBackend
+                    clip: true
+                    ScrollBar.vertical: ScrollBar {}
+                    ScrollBar.horizontal: ScrollBar {}
+
+                    columnWidthProvider: function(column) {
+                        var w = tableView.width
+                        var cols = tableView.columns
+                        if (cols <= 0 || w <= 0) return 100
+                        var filenameW = 3.0
+                        var infoW     = 1.5
+                        var hashW     = 2.0
+                        var hashCols  = Math.max(0, cols - 2)
+                        var total     = filenameW + infoW + hashCols * hashW
+                        if (column === 0)        return w * filenameW / total
+                        if (column === cols - 1) return w * infoW     / total
+                        return w * hashW / total
+                    }
+
+                    onWidthChanged: forceLayout()
+
+                    delegate: Rectangle {
+                        required property int row
+                        required property int column
+                        implicitHeight: 28
+                        color: model.isSelected ? palette.highlight
+                             : model.isError    ? Qt.rgba(0.37, 0.07, 0.07, 1)
+                             : (row % 2 === 0   ? palette.base : palette.alternateBase)
+
+                        Text {
+                            anchors { fill: parent; leftMargin: 6; rightMargin: 4 }
+                            text: model.display
+                            color: model.isSelected ? palette.highlightedText : palette.text
+                            elide: Text.ElideRight
+                            verticalAlignment: Text.AlignVCenter
+                            Component.onCompleted: {
+                                if (column > 0 && column < tableView.columns - 1)
+                                    font.family = "Monospace"
+                            }
                         }
 
-                        Label { text: "SHA1:"; font.bold: true; visible: AppBackend.setting_sha1 }
-                        TextEdit {
-                            visible: AppBackend.setting_sha1
-                            text: AppBackend.result_sha1
-                            readOnly: true
-                            font.family: "monospace"
-                            Layout.fillWidth: true
-                        }
-
-                        Label { text: "SHA256:"; font.bold: true; visible: AppBackend.setting_sha256 }
-                        TextEdit {
-                            visible: AppBackend.setting_sha256
-                            text: AppBackend.result_sha256
-                            readOnly: true
-                            font.family: "monospace"
-                            Layout.fillWidth: true
-                        }
-
-                        Label { text: "SHA512:"; font.bold: true; visible: AppBackend.setting_sha512 }
-                        TextEdit {
-                            visible: AppBackend.setting_sha512
-                            text: AppBackend.result_sha512
-                            readOnly: true
-                            font.family: "monospace"
-                            Layout.fillWidth: true
-                            wrapMode: TextEdit.Wrap
-                        }
-
-                        Label { text: "Info:"; font.bold: true }
-                        TextEdit {
-                            text: AppBackend.result_info
-                            readOnly: true
-                            wrapMode: TextEdit.Wrap
-                            Layout.fillWidth: true
+                        MouseArea {
+                            anchors.fill: parent
+                            acceptedButtons: Qt.LeftButton | Qt.RightButton
+                            onClicked: function(mouse) {
+                                AppBackend.select_row(row)
+                                if (mouse.button === Qt.RightButton) contextMenu.popup()
+                            }
+                            onPressAndHold: {
+                                AppBackend.select_row(row)
+                                contextMenu.popup()
+                            }
                         }
                     }
                 }
@@ -435,3 +364,4 @@ ApplicationWindow {
         }
     }
 }
+
