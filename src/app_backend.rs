@@ -688,6 +688,10 @@ impl qobject::AppBackend {
         let mut renamed = 0usize;
         let mut error_count = 0usize;
         for op in ops {
+            if op.new_path.exists() {
+                error_count += 1;
+                continue;
+            }
             match std::fs::rename(&op.old_path, &op.new_path) {
                 Ok(()) => {
                     if let Some(e) = self.as_mut().rust_mut().entries.get_mut(op.index) {
