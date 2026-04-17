@@ -326,6 +326,19 @@ ApplicationWindow {
                 }
             }
 
+            // Stretch the last column so it always reaches the right edge
+            function stretchLastColumn() {
+                var cols = tableView.columns
+                var w = tableView.width
+                if (cols <= 0 || w <= 0) return
+                var used = 0
+                for (var i = 0; i < cols - 1; i++)
+                    used += tableView.columnWidth(i)
+                var remaining = w - used
+                if (remaining > 50)
+                    tableView.setColumnWidth(cols - 1, remaining)
+            }
+
             Component.onCompleted: refreshHeaders()
 
             ListModel { id: headerModel }
@@ -402,7 +415,8 @@ ApplicationWindow {
                     ScrollBar.vertical: ScrollBar {}
                     ScrollBar.horizontal: ScrollBar {}
 
-                    onWidthChanged: Qt.callLater(fileListItem.initColumnWidths)
+                    onWidthChanged: Qt.callLater(fileListItem.stretchLastColumn)
+                    onColumnsChanged: Qt.callLater(fileListItem.initColumnWidths)
 
                     delegate: Rectangle {
                         required property int row
