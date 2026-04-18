@@ -33,6 +33,13 @@ if [[ ! -d "$VENDOR_DIR" || Cargo.lock -nt "$VENDOR_DIR" ]]; then
     touch "$VENDOR_DIR"   # update mtime so we don't re-vendor unnecessarily
 fi
 
+# ── Ensure flathub remote is present (needed to fetch SDKs) ──────────────────
+if ! flatpak remote-list --user | grep -q '^flathub'; then
+    echo "Adding flathub remote..."
+    flatpak remote-add --user --if-not-exists flathub \
+        https://dl.flathub.org/repo/flathub.flatpakrepo
+fi
+
 # ── Build ─────────────────────────────────────────────────────────────────────
 echo "Running flatpak-builder..."
 flatpak-builder \
