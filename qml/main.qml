@@ -17,13 +17,11 @@ ApplicationWindow {
             title: "File"
             MenuItem {
                 text: "Open Files…"
-                shortcut: "Ctrl+O"
                 enabled: !AppBackend.is_hashing
                 onTriggered: openFilesDialog.open()
             }
             MenuItem {
                 text: "Open Folder…"
-                shortcut: "Ctrl+L"
                 enabled: !AppBackend.is_hashing
                 onTriggered: openFolderDialog.open()
             }
