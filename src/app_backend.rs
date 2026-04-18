@@ -574,6 +574,7 @@ impl qobject::AppBackend {
         }
         let visible_kinds = self.rust().visible_kinds.clone();
         let col = column as usize;
+        unsafe { self.as_mut().begin_reset_model(); }
         self.as_mut().rust_mut().entries.sort_by(|a, b| {
             let a_val = sort_key(a, col, &visible_kinds);
             let b_val = sort_key(b, col, &visible_kinds);
@@ -583,15 +584,7 @@ impl qobject::AppBackend {
                 b_val.cmp(&a_val)
             }
         });
-
-        let count = self.rust().entries.len();
-        if count > 0 {
-            let col_count = (3 + self.rust().visible_kinds.len()) as i32;
-            let top = self.index(0, 0, &QModelIndex::default());
-            let bottom = self.index(count as i32 - 1, col_count - 1, &QModelIndex::default());
-            let roles = QVector::<i32>::default();
-            self.as_mut().data_changed(&top, &bottom, &roles);
-        }
+        unsafe { self.as_mut().end_reset_model(); }
     }
 
     fn copy_filepath(&self) {
