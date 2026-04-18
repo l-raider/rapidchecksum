@@ -24,3 +24,11 @@ target
 # Added by cargo
 
 /target
+
+# Flatpak build artifacts (generated — do not commit)
+/flatpak/.flatpak-builder/
+/flatpak/build/
+/flatpak/repo/
+/flatpak/cargo-sources.json
+/flatpak/flatpak-cargo-generator.py
+*.flatpak
