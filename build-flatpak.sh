@@ -21,12 +21,18 @@ CARGO_SOURCES="flatpak/cargo-sources.json"
 GENERATOR_URL="https://raw.githubusercontent.com/flatpak/flatpak-builder-tools/master/cargo/flatpak-cargo-generator.py"
 
 # ── Dependency checks ────────────────────────────────────────────────────────
-for cmd in flatpak flatpak-builder python3 curl; do
+for cmd in flatpak flatpak-builder python3 curl pip3; do
     if ! command -v "$cmd" &>/dev/null; then
         echo "Error: '$cmd' is not installed. Please install it and try again." >&2
         exit 1
     fi
 done
+
+# Ensure the Python dependency needed by flatpak-cargo-generator is present
+if ! python3 -c "import aiohttp" &>/dev/null; then
+    echo "Installing required Python package: aiohttp..."
+    pip3 install --user aiohttp
+fi
 
 # ── Download the generator once ──────────────────────────────────────────────
 if [[ ! -f "$GENERATOR" ]]; then
