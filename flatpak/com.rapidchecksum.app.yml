@@ -1,12 +1,10 @@
 app-id: com.rapidchecksum.app
 
-# Update runtime-version and the rust-stable extension version to match
-# whatever KDE/freedesktop SDK you have installed (check: flatpak list --runtime).
 runtime: org.kde.Platform
 runtime-version: '6.9'
 sdk: org.kde.Sdk
 sdk-extensions:
-  - org.freedesktop.Sdk.Extension.rust-stable//24.08
+  - org.freedesktop.Sdk.Extension.rust-stable
 
 command: rapidchecksum
 

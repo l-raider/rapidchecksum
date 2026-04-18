@@ -40,33 +40,19 @@ if ! flatpak remote-list --user | grep -q '^flathub'; then
         https://dl.flathub.org/repo/flathub.flatpakrepo
 fi
 
-# ── Detect the freedesktop SDK branch the installed KDE SDK is based on ──────
-# org.freedesktop.Sdk is installed as a transitive dependency of org.kde.Sdk.
-# The rust-stable extension branch must exactly match it (e.g. "24.08").
-FD_BRANCH=$(flatpak list --runtime --columns=ref 2>/dev/null \
-    | awk -F'/' '/^org\.freedesktop\.Sdk\//{print $3}' \
-    | sort -V | tail -1)
-
-if [[ -z "$FD_BRANCH" ]]; then
-    # Not installed yet — fall back to querying flathub for available branches
-    FD_BRANCH=$(flatpak remote-ls --user flathub --columns=ref 2>/dev/null \
-        | awk -F'/' '/^org\.freedesktop\.Sdk\.Extension\.rust-stable\//{print $3}' \
-        | sort -V | tail -1)
+# ── Ensure the rust-stable SDK extension is installed ────────────────────────
+# flatpak-builder resolves the branch from the SDK automatically when no
+# branch is specified in sdk-extensions — but it won't auto-install the
+# extension, so we do it here using the same branch as org.freedesktop.Sdk.
+FD_BRANCH=$(flatpak info --show-metadata "org.kde.Sdk" 2>/dev/null \
+    | awk '/^\[Extension org\.freedesktop\.Platform\.GL\]/{f=1}
+           f && /^versions=/{split($0,a,"[=;]"); print a[2]; exit}')
+FD_BRANCH="${FD_BRANCH:-24.08}"
+RUST_EXT="org.freedesktop.Sdk.Extension.rust-stable/x86_64/${FD_BRANCH}"
+if ! flatpak list --runtime --columns=ref 2>/dev/null | grep -qF "$RUST_EXT"; then
+    echo "Installing ${RUST_EXT}..."
+    flatpak install --user -y flathub "$RUST_EXT"
 fi
-
-if [[ -z "$FD_BRANCH" ]]; then
-    echo "Warning: could not detect freedesktop SDK branch; defaulting to 24.08."
-    FD_BRANCH="24.08"
-else
-    echo "Detected freedesktop SDK branch: ${FD_BRANCH}"
-fi
-
-# Write a temporary manifest with the correct rust-stable branch substituted in.
-# The temp file stays next to the original so relative paths (path: ..) still work.
-TMP_MANIFEST="flatpak/_tmp_build.yml"
-trap 'rm -f "${TMP_MANIFEST}"' EXIT
-sed "s|rust-stable//[0-9][0-9.]*|rust-stable//${FD_BRANCH}|g" \
-    "$MANIFEST" > "$TMP_MANIFEST"
 
 # ── Build ─────────────────────────────────────────────────────────────────────
 echo "Running flatpak-builder..."
@@ -76,7 +62,7 @@ flatpak-builder \
     --install-deps-from=flathub \
     --repo="$REPO_DIR" \
     "$BUILD_DIR" \
-    "$TMP_MANIFEST"
+    "$MANIFEST"
 
 echo
 echo "Build complete!"

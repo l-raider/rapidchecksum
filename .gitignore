@@ -31,6 +31,5 @@ target
 /flatpak/repo/
 /flatpak/vendor/
 /flatpak/cargo-vendor-config.toml
-/flatpak/_tmp_build.yml
 *.flatpak
 /flatpak/flatpak-cargo-generator.py
