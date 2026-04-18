@@ -58,6 +58,7 @@ fi
 echo "Running flatpak-builder..."
 flatpak-builder \
     --force-clean \
+    --disable-rofiles-fuse \
     --user \
     --install-deps-from=flathub \
     --repo="$REPO_DIR" \
