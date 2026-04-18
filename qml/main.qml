@@ -455,7 +455,7 @@ ApplicationWindow {
                             color: model.isSelected ? palette.highlightedText : palette.text
                             elide: Text.ElideRight
                             verticalAlignment: Text.AlignVCenter
-                            font.family: (column > 0 && column < tableView.columns - 1) ? "Monospace" : ""
+                            font.family: (column > 0 && column < tableView.columns - 1) ? "monospace" : Qt.application.font.family
                         }
 
                         MouseArea {
