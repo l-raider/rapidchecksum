@@ -65,16 +65,17 @@ flatpak-builder \
     "$BUILD_DIR" \
     "$MANIFEST"
 
+# ── Create the distributable .flatpak bundle ──────────────────────────────────
+BUNDLE="rapidchecksum.flatpak"
+echo "Creating ${BUNDLE}..."
+flatpak build-bundle "$REPO_DIR" "$BUNDLE" com.rapidchecksum.app
+
 echo
-echo "Build complete!"
+echo "Done! Bundle created: ${BUNDLE}"
 echo
 echo "  Test without installing:"
 echo "    flatpak-builder --run $BUILD_DIR $MANIFEST rapidchecksum"
 echo
-echo "  Install for current user:"
-echo "    flatpak remote-add --user --no-gpg-verify rc-local $REPO_DIR"
-echo "    flatpak install --user rc-local com.rapidchecksum.app"
+echo "  Install from bundle:"
+echo "    flatpak install --user ${BUNDLE}"
 echo "    flatpak run com.rapidchecksum.app"
-echo
-echo "  Create a single-file bundle:"
-echo "    flatpak build-bundle $REPO_DIR rapidchecksum.flatpak com.rapidchecksum.app"
