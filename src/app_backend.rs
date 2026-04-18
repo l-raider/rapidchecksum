@@ -705,9 +705,11 @@ impl qobject::AppBackend {
                     return None;
                 }
                 let path = entry.path.clone();
-                let stem = path.file_stem()
+                let raw_stem = path.file_stem()
                     .map(|s| s.to_string_lossy().to_string())
                     .unwrap_or_default();
+                // Strip any existing [XXXXXXXX] CRC32 tags so rename is idempotent
+                let stem = strip_crc32_tags(&raw_stem);
                 let ext = path.extension()
                     .map(|s| s.to_string_lossy().to_string())
                     .unwrap_or_default();
@@ -811,4 +813,24 @@ fn collect_files_recursive(dir: &std::path::Path, out: &mut Vec<PathBuf>) {
             out.push(path);
         }
     }
+}
+
+/// Remove all `[XXXXXXXX]` (8 hex digit) CRC32 tags from a filename stem.
+fn strip_crc32_tags(stem: &str) -> String {
+    let mut result = String::with_capacity(stem.len());
+    let bytes = stem.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'['
+            && i + 10 <= bytes.len()
+            && bytes[i + 9] == b']'
+            && bytes[i + 1..i + 9].iter().all(|b| b.is_ascii_hexdigit())
+        {
+            i += 10; // skip `[XXXXXXXX]`
+        } else {
+            result.push(stem.as_bytes()[i] as char);
+            i += 1;
+        }
+    }
+    result
 }
