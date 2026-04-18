@@ -185,6 +185,7 @@ pub struct AppBackendRust {
     files_completed: usize,
     total_files: usize,
     start_time: Option<Instant>,
+    hash_generation: u64,
 
     // Property backing fields
     is_hashing: bool,
@@ -218,6 +219,7 @@ impl Default for AppBackendRust {
             setting_sha256: config.hash_sha256,
             setting_sha512: config.hash_sha512,
             config,
+            hash_generation: 0,
             file_count: 0,
             is_hashing: false,
             file_progress: 0.0,
@@ -398,6 +400,8 @@ impl qobject::AppBackend {
         let (tx, rx) = mpsc::channel::<WorkerMessage>();
 
         let total = tasks.len();
+        self.as_mut().rust_mut().hash_generation += 1;
+        let generation = self.rust().hash_generation;
         self.as_mut().rust_mut().cancel_flag = Some(cancel.clone());
         self.as_mut().rust_mut().files_completed = 0;
         self.as_mut().rust_mut().total_files = total;
@@ -416,16 +420,16 @@ impl qobject::AppBackend {
                 let msg_clone = msg.clone();
                 qt_thread
                     .queue(move |mut backend: std::pin::Pin<&mut qobject::AppBackend>| {
-                        backend.as_mut().handle_worker_message(msg_clone);
+                        backend.as_mut().handle_worker_message(generation, msg_clone);
                     })
                     .ok();
             }
         });
     }
 
-    fn handle_worker_message(mut self: Pin<&mut Self>, msg: WorkerMessage) {
+    fn handle_worker_message(mut self: Pin<&mut Self>, generation: u64, msg: WorkerMessage) {
         // Ignore stale messages from a cancelled/completed run
-        if !self.rust().is_hashing {
+        if !self.rust().is_hashing || generation != self.rust().hash_generation {
             return;
         }
         match msg {
