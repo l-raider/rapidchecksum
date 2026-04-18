@@ -40,6 +40,34 @@ if ! flatpak remote-list --user | grep -q '^flathub'; then
         https://dl.flathub.org/repo/flathub.flatpakrepo
 fi
 
+# ── Detect the freedesktop SDK branch the installed KDE SDK is based on ──────
+# The rust-stable SDK extension branch must match this (e.g. "24.08").
+KDE_VER="6.9"
+FD_BRANCH=$(flatpak info --show-metadata "org.kde.Sdk/x86_64/${KDE_VER}" 2>/dev/null \
+    | awk -F'[=/]' '/^runtime=/{print $NF; exit}')
+
+if [[ -z "$FD_BRANCH" ]]; then
+    # KDE SDK not installed yet — flatpak-builder will install it; we cannot
+    # detect the branch until after install. Fall back to querying flathub.
+    FD_BRANCH=$(flatpak remote-info --user flathub \
+        "org.freedesktop.Sdk.Extension.rust-stable" 2>/dev/null \
+        | awk '/Branch:/{print $2}' | sort -V | tail -1)
+fi
+
+if [[ -z "$FD_BRANCH" ]]; then
+    echo "Warning: could not detect freedesktop SDK branch; defaulting to 24.08."
+    FD_BRANCH="24.08"
+else
+    echo "Detected freedesktop SDK branch: ${FD_BRANCH}"
+fi
+
+# Write a temporary manifest with the correct rust-stable branch substituted in.
+# The temp file stays next to the original so relative paths (path: ..) still work.
+TMP_MANIFEST="flatpak/_tmp_build.yml"
+trap 'rm -f "${TMP_MANIFEST}"' EXIT
+sed "s|rust-stable//[0-9][0-9.]*|rust-stable//${FD_BRANCH}|g" \
+    "$MANIFEST" > "$TMP_MANIFEST"
+
 # ── Build ─────────────────────────────────────────────────────────────────────
 echo "Running flatpak-builder..."
 flatpak-builder \
@@ -48,7 +76,7 @@ flatpak-builder \
     --install-deps-from=flathub \
     --repo="$REPO_DIR" \
     "$BUILD_DIR" \
-    "$MANIFEST"
+    "$TMP_MANIFEST"
 
 echo
 echo "Build complete!"
