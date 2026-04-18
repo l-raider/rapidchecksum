@@ -722,8 +722,19 @@ impl qobject::AppBackend {
 
                 let parent = path.parent()?;
                 let new_path = parent.join(&new_name);
-                // Ensure the new path stays within the original directory
-                if !new_path.starts_with(parent) {
+                // Ensure the new path stays within the original directory.
+                // Canonicalize to resolve ".." components that bypass starts_with.
+                let canon_parent = parent.canonicalize().ok()?;
+                let canon_new = new_path.canonicalize()
+                    .or_else(|_| {
+                        // File doesn't exist yet; canonicalize the parent and re-join the filename
+                        new_path.parent()
+                            .and_then(|p| p.canonicalize().ok())
+                            .map(|p| p.join(new_path.file_name().unwrap_or_default()))
+                            .ok_or(std::io::ErrorKind::NotFound)
+                    })
+                    .ok()?;
+                if !canon_new.starts_with(&canon_parent) {
                     return None;
                 }
                 if new_path == path {
