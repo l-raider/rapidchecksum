@@ -324,13 +324,14 @@ ApplicationWindow {
             // Populate header model from visible columns
             function refreshHeaders() {
                 headerModel.clear()
-                headerModel.append({ "colName": "Filename" })
+                var idx = 0
+                headerModel.append({ "colName": "Filename", "colIdx": idx++ })
                 var vc = AppBackend.visible_columns()
                 for (var i = 0; i < vc.length; i++) {
-                    headerModel.append({ "colName": vc[i] })
+                    headerModel.append({ "colName": vc[i], "colIdx": idx++ })
                 }
-                headerModel.append({ "colName": "Verify" })
-                headerModel.append({ "colName": "Info" })
+                headerModel.append({ "colName": "Verify", "colIdx": idx++ })
+                headerModel.append({ "colName": "Info", "colIdx": idx++ })
                 Qt.callLater(initColumnWidths)
             }
 
@@ -385,7 +386,6 @@ ApplicationWindow {
                     property bool sortAscending: true
 
                     delegate: Rectangle {
-                        required property int column
                         implicitWidth: 100
                         implicitHeight: 26
                         color: palette.button
@@ -409,7 +409,7 @@ ApplicationWindow {
                                 elide: Text.ElideRight
                             }
                             Text {
-                                visible: column === headerView.sortColumn
+                                visible: model.colIdx === headerView.sortColumn
                                 text: headerView.sortAscending ? "▲" : "▼"
                                 color: palette.buttonText
                                 font.pixelSize: 9
@@ -420,13 +420,14 @@ ApplicationWindow {
                             // Leave room for the resize handle on the right
                             anchors { fill: parent; rightMargin: 8 }
                             onClicked: {
-                                if (headerView.sortColumn === column) {
+                                var col = model.colIdx
+                                if (headerView.sortColumn === col) {
                                     headerView.sortAscending = !headerView.sortAscending
                                 } else {
-                                    headerView.sortColumn = column
+                                    headerView.sortColumn = col
                                     headerView.sortAscending = true
                                 }
-                                AppBackend.sort_by(column, headerView.sortAscending)
+                                AppBackend.sort_by(col, headerView.sortAscending)
                             }
                         }
                     }
