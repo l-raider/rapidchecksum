@@ -1,5 +1,6 @@
 #include <QtWidgets/QApplication>
 #include <QtGui/QClipboard>
+#include <QtGui/QIcon>
 
 static int    s_argc    = 1;
 static char   s_argv0[] = "rapidchecksum";
@@ -12,6 +13,7 @@ extern "C" {
     {
         if (!s_app) {
             s_app = new QApplication(s_argc, s_argv);
+            s_app->setWindowIcon(QIcon(":/icons/hicolor/256x256/apps/com.rapidchecksum.app.png"));
         }
     }
 
