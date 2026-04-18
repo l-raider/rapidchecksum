@@ -5,8 +5,7 @@
 # Then:       ./build-flatpak.sh
 #
 # Re-run any time you change Cargo.lock or source code.
-# The script regenerates cargo-sources.json automatically when Cargo.lock
-# is newer than the cached sources file.
+# The vendor directory is regenerated automatically when Cargo.lock changes.
 
 set -euo pipefail
 
@@ -16,34 +15,22 @@ cd "$SCRIPT_DIR"
 MANIFEST="flatpak/com.rapidchecksum.app.yml"
 BUILD_DIR="flatpak/build"
 REPO_DIR="flatpak/repo"
-GENERATOR="flatpak/flatpak-cargo-generator.py"
-CARGO_SOURCES="flatpak/cargo-sources.json"
-GENERATOR_URL="https://raw.githubusercontent.com/flatpak/flatpak-builder-tools/master/cargo/flatpak-cargo-generator.py"
+VENDOR_DIR="flatpak/vendor"
+VENDOR_CONFIG="flatpak/cargo-vendor-config.toml"
 
 # ── Dependency checks ────────────────────────────────────────────────────────
-for cmd in flatpak flatpak-builder python3 curl pip3; do
+for cmd in flatpak flatpak-builder cargo; do
     if ! command -v "$cmd" &>/dev/null; then
         echo "Error: '$cmd' is not installed. Please install it and try again." >&2
         exit 1
     fi
 done
 
-# Ensure the Python dependency needed by flatpak-cargo-generator is present
-if ! python3 -c "import aiohttp" &>/dev/null; then
-    echo "Installing required Python package: aiohttp..."
-    pip3 install --user aiohttp
-fi
-
-# ── Download the generator once ──────────────────────────────────────────────
-if [[ ! -f "$GENERATOR" ]]; then
-    echo "Downloading flatpak-cargo-generator.py..."
-    curl -fsSL "$GENERATOR_URL" -o "$GENERATOR"
-fi
-
-# ── Regenerate cargo sources when Cargo.lock is newer ────────────────────────
-if [[ ! -f "$CARGO_SOURCES" || Cargo.lock -nt "$CARGO_SOURCES" ]]; then
-    echo "Generating offline cargo sources from Cargo.lock..."
-    python3 "$GENERATOR" Cargo.lock -o "$CARGO_SOURCES"
+# ── Vendor all crates when Cargo.lock is newer than the vendor dir ───────────
+if [[ ! -d "$VENDOR_DIR" || Cargo.lock -nt "$VENDOR_DIR" ]]; then
+    echo "Vendoring crates (cargo vendor)..."
+    cargo vendor "$VENDOR_DIR" > "$VENDOR_CONFIG"
+    touch "$VENDOR_DIR"   # update mtime so we don't re-vendor unnecessarily
 fi
 
 # ── Build ─────────────────────────────────────────────────────────────────────

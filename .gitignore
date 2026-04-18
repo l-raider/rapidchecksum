@@ -29,6 +29,6 @@ target
 /flatpak/.flatpak-builder/
 /flatpak/build/
 /flatpak/repo/
-/flatpak/cargo-sources.json
-/flatpak/flatpak-cargo-generator.py
+/flatpak/vendor/
+/flatpak/cargo-vendor-config.toml
 *.flatpak
