@@ -56,6 +56,7 @@ ApplicationWindow {
 
     Shortcut { sequence: "Ctrl+O"; enabled: !AppBackend.is_hashing; onActivated: openFilesDialog.open() }
     Shortcut { sequence: "Ctrl+L"; enabled: !AppBackend.is_hashing; onActivated: openFolderDialog.open() }
+    Shortcut { sequence: "Delete"; enabled: !AppBackend.is_hashing && AppBackend.selected_row >= 0; onActivated: AppBackend.remove_selected() }
     Shortcut { sequence: "Ctrl+Q"; onActivated: Qt.quit() }
 
     // ─── File dialogs ─────────────────────────────────────────────────────
