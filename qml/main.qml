@@ -329,6 +329,7 @@ ApplicationWindow {
                 for (var i = 0; i < vc.length; i++) {
                     headerModel.append({ "colName": vc[i] })
                 }
+                headerModel.append({ "colName": "Verify" })
                 headerModel.append({ "colName": "Info" })
                 Qt.callLater(initColumnWidths)
             }
@@ -339,13 +340,15 @@ ApplicationWindow {
                 if (cols <= 0 || w <= 0) return
                 var filenameW = 3.0
                 var infoW     = 1.5
+                var verifyW   = 1.2
                 var hashW     = 2.0
-                var hashCols  = Math.max(0, cols - 2)
-                var total     = filenameW + infoW + hashCols * hashW
+                var hashCols  = Math.max(0, cols - 3)
+                var total     = filenameW + infoW + verifyW + hashCols * hashW
                 for (var i = 0; i < cols; i++) {
-                    if (i === 0)        tableView.setColumnWidth(i, w * filenameW / total)
+                    if (i === 0)             tableView.setColumnWidth(i, w * filenameW / total)
                     else if (i === cols - 1) tableView.setColumnWidth(i, w * infoW / total)
-                    else                tableView.setColumnWidth(i, w * hashW / total)
+                    else if (i === cols - 2) tableView.setColumnWidth(i, w * verifyW / total)
+                    else                     tableView.setColumnWidth(i, w * hashW / total)
                 }
             }
 
@@ -454,7 +457,10 @@ ApplicationWindow {
                         Text {
                             anchors { fill: parent; leftMargin: 6; rightMargin: 4 }
                             text: model.display
-                            color: model.isSelected ? palette.highlightedText : palette.text
+                            color: model.isSelected ? palette.highlightedText
+                                 : (column === tableView.columns - 2 && model.verifyStatus === 1) ? "#4caf50"
+                                 : (column === tableView.columns - 2 && model.verifyStatus === 2) ? "#f44336"
+                                 : palette.text
                             elide: Text.ElideRight
                             verticalAlignment: Text.AlignVCenter
                             font.family: (column > 0 && column < tableView.columns - 1) ? "monospace" : Qt.application.font.family

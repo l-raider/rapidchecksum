@@ -26,6 +26,7 @@ fn set_clipboard(text: &str) {
 const ROLE_DISPLAY: i32 = 0;    // Qt::DisplayRole
 const ROLE_IS_ERROR: i32 = 256;  // Qt::UserRole
 const ROLE_IS_SELECTED: i32 = 257; // Qt::UserRole + 1
+const ROLE_VERIFY_STATUS: i32 = 258; // Qt::UserRole + 2
 
 #[cxx_qt::bridge]
 pub mod qobject {
@@ -258,6 +259,13 @@ impl qobject::AppBackend {
                     let kind = visible_kinds[col - 1];
                     QVariant::from(&QString::from(entry.hash_value(kind)))
                 } else if col == num_hash_cols + 1 {
+                    let text = match entry.verify_status() {
+                        1 => "\u{2713} Match",
+                        2 => "\u{2717} Mismatch",
+                        _ => "",
+                    };
+                    QVariant::from(&QString::from(text))
+                } else if col == num_hash_cols + 2 {
                     let text = if let Some(ref err) = entry.error {
                         format!("Error: {}", err)
                     } else {
@@ -270,6 +278,7 @@ impl qobject::AppBackend {
             }
             ROLE_IS_ERROR => QVariant::from(&entry.error.is_some()),
             ROLE_IS_SELECTED => QVariant::from(&(rust.selected_row == row as i32)),
+            ROLE_VERIFY_STATUS => QVariant::from(&entry.verify_status()),
             _ => QVariant::default(),
         }
     }
@@ -279,6 +288,7 @@ impl qobject::AppBackend {
         map.insert(ROLE_DISPLAY, QByteArray::from("display"));
         map.insert(ROLE_IS_ERROR, QByteArray::from("isError"));
         map.insert(ROLE_IS_SELECTED, QByteArray::from("isSelected"));
+        map.insert(ROLE_VERIFY_STATUS, QByteArray::from("verifyStatus"));
         map
     }
 
@@ -286,7 +296,7 @@ impl qobject::AppBackend {
         if parent.is_valid() {
             return 0;
         }
-        (2 + self.rust().visible_kinds.len()) as i32
+        (3 + self.rust().visible_kinds.len()) as i32
     }
 
     fn add_files(mut self: Pin<&mut Self>, paths: &QStringList) {
@@ -458,7 +468,7 @@ impl qobject::AppBackend {
                 self.as_mut().rust_mut().files_completed += 1;
 
                 let roles = QVector::<i32>::default();
-                let col_count = (2 + self.rust().visible_kinds.len()) as i32;
+                let col_count = (3 + self.rust().visible_kinds.len()) as i32;
                 let row_tl = self.index(file_index as i32, 0, &QModelIndex::default());
                 let row_br = self.index(file_index as i32, col_count - 1, &QModelIndex::default());
                 self.as_mut().data_changed(&row_tl, &row_br, &roles);
@@ -472,7 +482,7 @@ impl qobject::AppBackend {
                 self.as_mut().rust_mut().files_completed += 1;
 
                 let roles = QVector::<i32>::default();
-                let col_count = (2 + self.rust().visible_kinds.len()) as i32;
+                let col_count = (3 + self.rust().visible_kinds.len()) as i32;
                 let row_tl = self.index(file_index as i32, 0, &QModelIndex::default());
                 let row_br = self.index(file_index as i32, col_count - 1, &QModelIndex::default());
                 self.as_mut().data_changed(&row_tl, &row_br, &roles);
@@ -549,7 +559,7 @@ impl qobject::AppBackend {
         // Notify model that isSelected role changed for all rows
         let count = self.rust().entries.len();
         if count > 0 {
-            let col_count = (2 + self.rust().visible_kinds.len()) as i32;
+            let col_count = (3 + self.rust().visible_kinds.len()) as i32;
             let top = self.index(0, 0, &QModelIndex::default());
             let bottom = self.index(count as i32 - 1, col_count - 1, &QModelIndex::default());
             let mut roles = QVector::<i32>::default();
@@ -576,7 +586,7 @@ impl qobject::AppBackend {
 
         let count = self.rust().entries.len();
         if count > 0 {
-            let col_count = (2 + self.rust().visible_kinds.len()) as i32;
+            let col_count = (3 + self.rust().visible_kinds.len()) as i32;
             let top = self.index(0, 0, &QModelIndex::default());
             let bottom = self.index(count as i32 - 1, col_count - 1, &QModelIndex::default());
             let roles = QVector::<i32>::default();
@@ -752,7 +762,7 @@ impl qobject::AppBackend {
 
         let count = self.rust().entries.len();
         if count > 0 {
-            let col_count = (2 + self.rust().visible_kinds.len()) as i32;
+            let col_count = (3 + self.rust().visible_kinds.len()) as i32;
             let top = self.index(0, 0, &QModelIndex::default());
             let bottom = self.index(count as i32 - 1, col_count - 1, &QModelIndex::default());
             let roles = QVector::<i32>::default();
@@ -765,7 +775,15 @@ fn sort_key(entry: &FileEntry, column: usize, visible_kinds: &[HashKind]) -> Str
     if column == 0 {
         return entry.filename.to_lowercase();
     }
-    let info_col = 1 + visible_kinds.len();
+    let verify_col = 1 + visible_kinds.len();
+    let info_col = 2 + visible_kinds.len();
+    if column == verify_col {
+        return match entry.verify_status() {
+            1 => "match".to_string(),
+            2 => "mismatch".to_string(),
+            _ => String::new(),
+        };
+    }
     if column == info_col {
         return if let Some(ref err) = entry.error {
             format!("error: {}", err.to_lowercase())
