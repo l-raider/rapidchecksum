@@ -32,3 +32,4 @@ target
 /flatpak/vendor/
 /flatpak/cargo-vendor-config.toml
 *.flatpak
+/flatpak/flatpak-cargo-generator.py
