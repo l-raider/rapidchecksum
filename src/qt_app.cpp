@@ -13,7 +13,7 @@ extern "C" {
     {
         if (!s_app) {
             s_app = new QApplication(s_argc, s_argv);
-            s_app->setWindowIcon(QIcon(":/icons/hicolor/256x256/apps/com.rapidchecksum.app.png"));
+            s_app->setWindowIcon(QIcon(":/icons/hicolor/256x256/apps/io.github.l_raider.rapidchecksum.png"));
         }
     }
 

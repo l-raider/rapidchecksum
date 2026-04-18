@@ -12,7 +12,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"
 
-MANIFEST="flatpak/com.rapidchecksum.app.yml"
+MANIFEST="flatpak/io.github.l_raider.rapidchecksum.yml"
 BUILD_DIR="flatpak/build"
 REPO_DIR="flatpak/repo"
 VENDOR_DIR="flatpak/vendor"
@@ -35,18 +35,18 @@ if [[ ! -d "$VENDOR_DIR" || Cargo.lock -nt "$VENDOR_DIR" ]]; then
 fi
 
 # ── Generate icon PNGs from SVG when the SVG is newer ────────────────────────
-SVG_ICON="flatpak/icons/com.rapidchecksum.app.svg"
-ICON_SENTINEL="flatpak/icons/hicolor/256x256/apps/com.rapidchecksum.app.png"
+SVG_ICON="flatpak/icons/io.github.l_raider.rapidchecksum.svg"
+ICON_SENTINEL="flatpak/icons/hicolor/256x256/apps/io.github.l_raider.rapidchecksum.png"
 if [[ ! -f "$ICON_SENTINEL" || "$SVG_ICON" -nt "$ICON_SENTINEL" ]]; then
     echo "Generating icon PNGs from SVG..."
     for size in 16 32 48 64 128 256 512; do
         dir="flatpak/icons/hicolor/${size}x${size}/apps"
         mkdir -p "$dir"
         rsvg-convert -w "$size" -h "$size" "$SVG_ICON" \
-            -o "$dir/com.rapidchecksum.app.png"
+            -o "$dir/io.github.l_raider.rapidchecksum.png"
     done
     mkdir -p "flatpak/icons/hicolor/scalable/apps"
-    cp "$SVG_ICON" "flatpak/icons/hicolor/scalable/apps/com.rapidchecksum.app.svg"
+    cp "$SVG_ICON" "flatpak/icons/hicolor/scalable/apps/io.github.l_raider.rapidchecksum.svg"
 fi
 
 # ── Ensure flathub remote is present (needed to fetch SDKs) ──────────────────
@@ -85,7 +85,7 @@ flatpak-builder \
 # ── Create the distributable .flatpak bundle ──────────────────────────────────
 BUNDLE="rapidchecksum.flatpak"
 echo "Creating ${BUNDLE}..."
-flatpak build-bundle "$REPO_DIR" "$BUNDLE" com.rapidchecksum.app
+flatpak build-bundle "$REPO_DIR" "$BUNDLE" io.github.l_raider.rapidchecksum
 
 echo
 echo "Done! Bundle created: ${BUNDLE}"
@@ -95,4 +95,4 @@ echo "    flatpak-builder --run $BUILD_DIR $MANIFEST rapidchecksum"
 echo
 echo "  Install from bundle:"
 echo "    flatpak install --user ${BUNDLE}"
-echo "    flatpak run com.rapidchecksum.app"
+echo "    flatpak run io.github.l_raider.rapidchecksum"
