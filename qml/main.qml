@@ -17,11 +17,13 @@ ApplicationWindow {
             title: "File"
             MenuItem {
                 text: "Open Files…"
+                shortcut: "Ctrl+O"
                 enabled: !AppBackend.is_hashing
                 onTriggered: openFilesDialog.open()
             }
             MenuItem {
                 text: "Open Folder…"
+                shortcut: "Ctrl+L"
                 enabled: !AppBackend.is_hashing
                 onTriggered: openFolderDialog.open()
             }
@@ -54,7 +56,8 @@ ApplicationWindow {
         }
     }
 
-    Shortcut { sequence: "Ctrl+O"; onActivated: openFilesDialog.open() }
+    Shortcut { sequence: "Ctrl+O"; enabled: !AppBackend.is_hashing; onActivated: openFilesDialog.open() }
+    Shortcut { sequence: "Ctrl+L"; enabled: !AppBackend.is_hashing; onActivated: openFolderDialog.open() }
     Shortcut { sequence: "Ctrl+Q"; onActivated: Qt.quit() }
 
     // ─── File dialogs ─────────────────────────────────────────────────────
