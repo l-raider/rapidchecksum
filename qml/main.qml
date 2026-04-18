@@ -455,10 +455,7 @@ ApplicationWindow {
                             color: model.isSelected ? palette.highlightedText : palette.text
                             elide: Text.ElideRight
                             verticalAlignment: Text.AlignVCenter
-                            Component.onCompleted: {
-                                if (column > 0 && column < tableView.columns - 1)
-                                    font.family = "Monospace"
-                            }
+                            font.family: (column > 0 && column < tableView.columns - 1) ? "Monospace" : ""
                         }
 
                         MouseArea {
