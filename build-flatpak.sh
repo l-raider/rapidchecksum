@@ -47,7 +47,7 @@ fi
 FD_BRANCH=$(flatpak info --show-metadata "org.kde.Sdk" 2>/dev/null \
     | awk '/^\[Extension org\.freedesktop\.Platform\.GL\]/{f=1}
            f && /^versions=/{split($0,a,"[=;]"); print a[2]; exit}')
-FD_BRANCH="${FD_BRANCH:-24.08}"
+FD_BRANCH="${FD_BRANCH:-25.08}"
 RUST_EXT="org.freedesktop.Sdk.Extension.rust-stable/x86_64/${FD_BRANCH}"
 if ! flatpak list --runtime --columns=ref 2>/dev/null | grep -qF "$RUST_EXT"; then
     echo "Installing ${RUST_EXT}..."
