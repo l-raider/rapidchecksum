@@ -781,9 +781,9 @@ fn sort_key(entry: &FileEntry, column: usize, visible_kinds: &[HashKind]) -> Str
     let info_col = 2 + visible_kinds.len();
     if column == verify_col {
         return match entry.verify_status() {
-            1 => "match".to_string(),
-            2 => "mismatch".to_string(),
-            _ => String::new(),
+            1 => "1_match".to_string(),
+            2 => "2_mismatch".to_string(),
+            _ => "0_none".to_string(),
         };
     }
     if column == info_col {
