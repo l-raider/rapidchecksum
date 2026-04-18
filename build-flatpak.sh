@@ -41,17 +41,17 @@ if ! flatpak remote-list --user | grep -q '^flathub'; then
 fi
 
 # ── Detect the freedesktop SDK branch the installed KDE SDK is based on ──────
-# The rust-stable SDK extension branch must match this (e.g. "24.08").
-KDE_VER="6.9"
-FD_BRANCH=$(flatpak info --show-metadata "org.kde.Sdk/x86_64/${KDE_VER}" 2>/dev/null \
-    | awk -F'[=/]' '/^runtime=/{print $NF; exit}')
+# org.freedesktop.Sdk is installed as a transitive dependency of org.kde.Sdk.
+# The rust-stable extension branch must exactly match it (e.g. "24.08").
+FD_BRANCH=$(flatpak list --runtime --columns=ref 2>/dev/null \
+    | awk -F'/' '/^org\.freedesktop\.Sdk\//{print $3}' \
+    | sort -V | tail -1)
 
 if [[ -z "$FD_BRANCH" ]]; then
-    # KDE SDK not installed yet — flatpak-builder will install it; we cannot
-    # detect the branch until after install. Fall back to querying flathub.
-    FD_BRANCH=$(flatpak remote-info --user flathub \
-        "org.freedesktop.Sdk.Extension.rust-stable" 2>/dev/null \
-        | awk '/Branch:/{print $2}' | sort -V | tail -1)
+    # Not installed yet — fall back to querying flathub for available branches
+    FD_BRANCH=$(flatpak remote-ls --user flathub --columns=ref 2>/dev/null \
+        | awk -F'/' '/^org\.freedesktop\.Sdk\.Extension\.rust-stable\//{print $3}' \
+        | sort -V | tail -1)
 fi
 
 if [[ -z "$FD_BRANCH" ]]; then
