@@ -821,8 +821,14 @@ fn strip_crc32_tags(stem: &str) -> String {
         {
             i += 10; // skip `[XXXXXXXX]`
         } else {
-            result.push(stem.as_bytes()[i] as char);
+            // Advance past the entire UTF-8 character to avoid corrupting
+            // multi-byte sequences (e.g. accented or CJK characters).
+            let start = i;
             i += 1;
+            while i < bytes.len() && bytes[i] & 0xC0 == 0x80 {
+                i += 1;
+            }
+            result.push_str(&stem[start..i]);
         }
     }
     result
