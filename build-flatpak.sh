@@ -57,15 +57,16 @@ if ! flatpak remote-list --user | grep -q '^flathub'; then
 fi
 
 # ── Ensure the rust-stable SDK extension is installed ────────────────────────
-# flatpak-builder resolves the branch from the SDK automatically when no
-# branch is specified in sdk-extensions — but it won't auto-install the
-# extension, so we do it here using the same branch as org.freedesktop.Sdk.
-FD_BRANCH=$(flatpak info --show-metadata "org.kde.Sdk" 2>/dev/null \
+# Read the KDE branch from the manifest, then look up the freedesktop branch
+# from the specific KDE SDK metadata to find the matching rust-stable branch.
+KDE_BRANCH=$(awk '/^runtime-version:/{gsub(/[^0-9.]/, "", $2); print $2; exit}' "$MANIFEST")
+KDE_BRANCH="${KDE_BRANCH:-6.10}"
+FD_BRANCH=$(flatpak info --show-metadata "org.kde.Sdk/x86_64/${KDE_BRANCH}" 2>/dev/null \
     | awk '/^\[Extension org\.freedesktop\.Platform\.GL\]/{f=1}
            f && /^versions=/{split($0,a,"[=;]"); print a[2]; exit}')
 FD_BRANCH="${FD_BRANCH:-25.08}"
 RUST_EXT="org.freedesktop.Sdk.Extension.rust-stable/x86_64/${FD_BRANCH}"
-if ! flatpak list --runtime --columns=ref 2>/dev/null | grep -qF "$RUST_EXT"; then
+if ! flatpak list --runtime --columns=ref --all 2>/dev/null | grep -qF "$RUST_EXT"; then
     echo "Installing ${RUST_EXT}..."
     flatpak install --user -y flathub "$RUST_EXT"
 fi
