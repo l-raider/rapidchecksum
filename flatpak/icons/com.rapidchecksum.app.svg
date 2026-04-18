@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Background -->
+  <rect width="512" height="512" rx="100" fill="#00838f"/>
+  <!-- Hash "#" symbol -->
+  <!-- Vertical bar left -->
+  <rect x="170" y="80" width="52" height="352" rx="26" fill="white"/>
+  <!-- Vertical bar right -->
+  <rect x="290" y="80" width="52" height="352" rx="26" fill="white"/>
+  <!-- Horizontal bar top -->
+  <rect x="80" y="196" width="352" height="52" rx="26" fill="white"/>
+  <!-- Horizontal bar bottom -->
+  <rect x="80" y="316" width="352" height="52" rx="26" fill="white"/>
+</svg>

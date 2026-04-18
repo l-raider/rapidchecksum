@@ -33,6 +33,13 @@ modules:
       - install -Dm755 target/release/rapidchecksum /app/bin/rapidchecksum
       - install -Dm644 flatpak/com.rapidchecksum.app.desktop
           /app/share/applications/com.rapidchecksum.app.desktop
+      - install -Dm644 flatpak/icons/hicolor/scalable/apps/com.rapidchecksum.app.svg
+          /app/share/icons/hicolor/scalable/apps/com.rapidchecksum.app.svg
+      - for size in 16 32 48 64 128 256 512; do
+          install -Dm644
+            "flatpak/icons/hicolor/${size}x${size}/apps/com.rapidchecksum.app.png"
+            "/app/share/icons/hicolor/${size}x${size}/apps/com.rapidchecksum.app.png";
+        done
     sources:
       # Project source including the pre-vendored crate directory.
       # flatpak/vendor/ and flatpak/cargo-vendor-config.toml are generated

@@ -19,9 +19,10 @@ VENDOR_DIR="flatpak/vendor"
 VENDOR_CONFIG="flatpak/cargo-vendor-config.toml"
 
 # ── Dependency checks ────────────────────────────────────────────────────────
-for cmd in flatpak flatpak-builder cargo; do
+for cmd in flatpak flatpak-builder cargo rsvg-convert; do
     if ! command -v "$cmd" &>/dev/null; then
         echo "Error: '$cmd' is not installed. Please install it and try again." >&2
+        echo "  rsvg-convert is provided by: sudo apt install librsvg2-bin" >&2
         exit 1
     fi
 done
@@ -31,6 +32,21 @@ if [[ ! -d "$VENDOR_DIR" || Cargo.lock -nt "$VENDOR_DIR" ]]; then
     echo "Vendoring crates (cargo vendor)..."
     cargo vendor "$VENDOR_DIR" > "$VENDOR_CONFIG"
     touch "$VENDOR_DIR"   # update mtime so we don't re-vendor unnecessarily
+fi
+
+# ── Generate icon PNGs from SVG when the SVG is newer ────────────────────────
+SVG_ICON="flatpak/icons/com.rapidchecksum.app.svg"
+ICON_SENTINEL="flatpak/icons/hicolor/256x256/apps/com.rapidchecksum.app.png"
+if [[ ! -f "$ICON_SENTINEL" || "$SVG_ICON" -nt "$ICON_SENTINEL" ]]; then
+    echo "Generating icon PNGs from SVG..."
+    for size in 16 32 48 64 128 256 512; do
+        dir="flatpak/icons/hicolor/${size}x${size}/apps"
+        mkdir -p "$dir"
+        rsvg-convert -w "$size" -h "$size" "$SVG_ICON" \
+            -o "$dir/com.rapidchecksum.app.png"
+    done
+    mkdir -p "flatpak/icons/hicolor/scalable/apps"
+    cp "$SVG_ICON" "flatpak/icons/hicolor/scalable/apps/com.rapidchecksum.app.svg"
 fi
 
 # ── Ensure flathub remote is present (needed to fetch SDKs) ──────────────────
