@@ -320,6 +320,7 @@ ApplicationWindow {
             id: fileListItem
             Layout.fillWidth: true
             Layout.fillHeight: true
+            property var colWeights: []
 
             // Populate header model from visible columns
             function refreshHeaders() {
@@ -332,38 +333,35 @@ ApplicationWindow {
                 }
                 headerModel.append({ "colName": "Verify", "colIdx": idx++ })
                 headerModel.append({ "colName": "Info", "colIdx": idx++ })
-                Qt.callLater(initColumnWidths)
+                Qt.callLater(initColumnWeights)
             }
 
-            function initColumnWidths() {
-                var w = tableView.width
+            function initColumnWeights() {
                 var cols = tableView.columns
-                if (cols <= 0 || w <= 0) return
+                if (cols <= 0) return
                 var filenameW = 3.0
                 var infoW     = 1.5
                 var verifyW   = 1.2
                 var hashW     = 2.0
                 var hashCols  = Math.max(0, cols - 3)
                 var total     = filenameW + infoW + verifyW + hashCols * hashW
+                var weights   = []
                 for (var i = 0; i < cols; i++) {
-                    if (i === 0)             tableView.setColumnWidth(i, w * filenameW / total)
-                    else if (i === cols - 1) tableView.setColumnWidth(i, w * infoW / total)
-                    else if (i === cols - 2) tableView.setColumnWidth(i, w * verifyW / total)
-                    else                     tableView.setColumnWidth(i, w * hashW / total)
+                    if (i === 0)             weights.push(filenameW / total)
+                    else if (i === cols - 1) weights.push(infoW / total)
+                    else if (i === cols - 2) weights.push(verifyW / total)
+                    else                     weights.push(hashW / total)
                 }
+                colWeights = weights
+                applyColumnWidths()
             }
 
-            // Stretch the last column so it always reaches the right edge
-            function stretchLastColumn() {
-                var cols = tableView.columns
+            // Apply stored fractional weights to the current table width
+            function applyColumnWidths() {
+                if (colWeights.length === 0 || tableView.width <= 0) return
                 var w = tableView.width
-                if (cols <= 0 || w <= 0) return
-                var used = 0
-                for (var i = 0; i < cols - 1; i++)
-                    used += tableView.columnWidth(i)
-                var remaining = w - used
-                if (remaining > 50)
-                    tableView.setColumnWidth(cols - 1, remaining)
+                for (var i = 0; i < colWeights.length; i++)
+                    tableView.setColumnWidth(i, Math.max(40, w * colWeights[i]))
             }
 
             Component.onCompleted: refreshHeaders()
@@ -443,8 +441,8 @@ ApplicationWindow {
                     ScrollBar.vertical: ScrollBar {}
                     ScrollBar.horizontal: ScrollBar {}
 
-                    onWidthChanged: Qt.callLater(fileListItem.stretchLastColumn)
-                    onColumnsChanged: Qt.callLater(fileListItem.initColumnWidths)
+                    onWidthChanged: Qt.callLater(fileListItem.applyColumnWidths)
+                    onColumnsChanged: Qt.callLater(fileListItem.initColumnWeights)
 
                     delegate: Rectangle {
                         required property int row
