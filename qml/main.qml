@@ -321,6 +321,7 @@ ApplicationWindow {
             Layout.fillWidth: true
             Layout.fillHeight: true
             property var colWeights: []
+            property bool updatingWidths: false
 
             // Populate header model from visible columns
             function refreshHeaders() {
@@ -359,12 +360,37 @@ ApplicationWindow {
             // Apply stored fractional weights to the current table width
             function applyColumnWidths() {
                 if (colWeights.length === 0 || tableView.width <= 0) return
+                updatingWidths = true
                 var w = tableView.width
                 for (var i = 0; i < colWeights.length; i++)
                     tableView.setColumnWidth(i, Math.max(40, w * colWeights[i]))
+                updatingWidths = false
             }
 
             Component.onCompleted: refreshHeaders()
+
+            // When the user manually drags a header divider, re-derive colWeights
+            // from actual pixel widths so the new proportions survive future resizes.
+            Connections {
+                target: tableView
+                function onColumnWidthChanged(column) {
+                    if (fileListItem.updatingWidths) return
+                    if (tableView.columns !== fileListItem.colWeights.length) return
+                    var total = 0
+                    var widths = []
+                    for (var i = 0; i < tableView.columns; i++) {
+                        var cw = tableView.columnWidth(i)
+                        var w = cw > 0 ? cw : tableView.width * fileListItem.colWeights[i]
+                        widths.push(w)
+                        total += w
+                    }
+                    if (total <= 0) return
+                    var newWeights = []
+                    for (var j = 0; j < widths.length; j++)
+                        newWeights.push(widths[j] / total)
+                    fileListItem.colWeights = newWeights
+                }
+            }
 
             ListModel { id: headerModel }
 
