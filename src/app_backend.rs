@@ -171,6 +171,8 @@ pub mod qobject {
         fn apply_rename_settings(self: Pin<&mut AppBackend>);
         #[qinvokable]
         fn rename_files(self: Pin<&mut AppBackend>);
+        #[qinvokable]
+        fn get_rename_preview(self: &AppBackend) -> QString;
     }
 
     impl cxx_qt::Threading for AppBackend {}
@@ -779,6 +781,46 @@ impl qobject::AppBackend {
             let roles = QVector::<i32>::default();
             self.as_mut().data_changed(&top, &bottom, &roles);
         }
+    }
+
+    fn get_rename_preview(&self) -> QString {
+        let r = self.rust();
+        let pattern = &r.config.rename_pattern;
+
+        for entry in &r.entries {
+            if entry.hashes.is_empty() || entry.error.is_some() {
+                continue;
+            }
+            let path = &entry.path;
+            let raw_stem = path.file_stem()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_default();
+            let stem = strip_crc32_tags(&raw_stem);
+            let ext = path.extension()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_default();
+
+            let new_name = pattern
+                .replace("%FILENAME%", &stem)
+                .replace("%FILEEXT%", &ext)
+                .replace("%CRC%", entry.hash_value(HashKind::CRC32))
+                .replace("%MD5%", entry.hash_value(HashKind::MD5))
+                .replace("%SHA1%", entry.hash_value(HashKind::SHA1))
+                .replace("%SHA256%", entry.hash_value(HashKind::SHA256))
+                .replace("%SHA512%", entry.hash_value(HashKind::SHA512));
+
+            let old_name = path.file_name()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_default();
+
+            if new_name == old_name {
+                continue;
+            }
+
+            return QString::from(&format!("{} → {}", old_name, new_name));
+        }
+
+        QString::from("")
     }
 }
 

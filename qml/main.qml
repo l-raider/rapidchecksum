@@ -259,6 +259,64 @@ ApplicationWindow {
         }
     }
 
+    // ─── Rename Files confirmation dialog ─────────────────────────────────
+    Dialog {
+        id: renameConfirmDialog
+        title: "Rename Files"
+        modal: true
+        anchors.centerIn: parent
+        implicitWidth: 460
+
+        onAboutToShow: {
+            renameConfirmCheck.checked = false
+        }
+        onAccepted: AppBackend.rename_files()
+
+        ColumnLayout {
+            spacing: 10
+            anchors.left: parent.left
+            anchors.right: parent.right
+
+            Label {
+                text: "This will permanently rename all hashed files on disk according to the current rename pattern."
+                wrapMode: Text.Wrap
+                Layout.fillWidth: true
+            }
+
+            ColumnLayout {
+                spacing: 4
+                visible: previewLabel.text !== ""
+                Layout.fillWidth: true
+
+                Label { text: "Preview (first file):"; font.bold: true }
+                Label {
+                    id: previewLabel
+                    text: ""
+                    font.family: "monospace"
+                    wrapMode: Text.WrapAnywhere
+                    Layout.fillWidth: true
+                }
+            }
+
+            CheckBox {
+                id: renameConfirmCheck
+                text: "I confirm I want to rename these files"
+            }
+        }
+
+        footer: DialogButtonBox {
+            Button {
+                text: "Rename"
+                enabled: renameConfirmCheck.checked
+                DialogButtonBox.buttonRole: DialogButtonBox.AcceptRole
+            }
+            Button {
+                text: "Cancel"
+                DialogButtonBox.buttonRole: DialogButtonBox.RejectRole
+            }
+        }
+    }
+
     // ─── Main layout ──────────────────────────────────────────────────────
     ColumnLayout {
         anchors.fill: parent
@@ -291,7 +349,10 @@ ApplicationWindow {
             Button {
                 text: "Rename Files"
                 enabled: !AppBackend.is_hashing && AppBackend.file_count > 0
-                onClicked: AppBackend.rename_files()
+                onClicked: {
+                    previewLabel.text = AppBackend.get_rename_preview()
+                    renameConfirmDialog.open()
+                }
             }
             Item { Layout.fillWidth: true }
         }
@@ -369,7 +430,7 @@ ApplicationWindow {
 
             Component.onCompleted: refreshHeaders()
 
-            // When the user manually drags a header divider, re-derive colWeights
+            // When the user manually drags a column edge, re-derive colWeights
             // from actual pixel widths so the new proportions survive future resizes.
             Connections {
                 target: tableView
