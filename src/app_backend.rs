@@ -66,8 +66,6 @@ pub mod qobject {
 
     unsafe extern "RustQt" {
         #[qobject]
-        #[qml_element]
-        #[qml_singleton]
         #[base = QAbstractTableModel]
         #[qproperty(bool, is_hashing)]
         #[qproperty(f32, file_progress)]

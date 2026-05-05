@@ -1,12 +1,10 @@
-use cxx_qt_build::{CxxQtBuilder, QmlModule};
+use cxx_qt_build::CxxQtBuilder;
 
 fn main() {
-    CxxQtBuilder::new_qml_module(
-        QmlModule::new("com.rapidchecksum.app").qml_file("qml/main.qml"),
-    )
-    .qt_module("Widgets")
-    .cpp_file("src/qt_app.cpp")
-    .qrc("resources.qrc")
-    .files(["src/app_backend.rs"])
-    .build();
+    CxxQtBuilder::new()
+        .qt_module("Widgets")
+        .cpp_file("src/qt_app.cpp")
+        .qrc("resources.qrc")
+        .files(["src/app_backend.rs"])
+        .build();
 }

@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <memory>
 
 #include <QtWidgets/QApplication>
 #include <QtWidgets/QAbstractItemView>
@@ -86,6 +87,11 @@ private:
     QFont m_fixed_font;
 };
 
+struct SortState {
+    int column = -1;
+    Qt::SortOrder order = Qt::AscendingOrder;
+};
+
 }
 
 static QString widget_window_title(const AppBackend* backend)
@@ -146,6 +152,7 @@ extern "C" {
         auto* hash_algorithms_action = new QAction(QStringLiteral("Hash Algorithms..."), window);
         auto* file_renaming_action = new QAction(QStringLiteral("File Renaming..."), window);
         QFont fixed_font = QFontDatabase::systemFont(QFontDatabase::FixedFont);
+        auto sort_state = std::make_shared<SortState>();
 
         open_files_action->setShortcut(QKeySequence(QStringLiteral("Ctrl+O")));
         open_folder_action->setShortcut(QKeySequence(QStringLiteral("Ctrl+L")));
@@ -186,6 +193,7 @@ extern "C" {
         table_view->horizontalHeader()->setStretchLastSection(true);
         table_view->horizontalHeader()->setSectionsClickable(true);
         table_view->horizontalHeader()->setSortIndicatorShown(true);
+        table_view->horizontalHeader()->setSortIndicator(-1, Qt::AscendingOrder);
         table_view->verticalHeader()->setVisible(false);
         table_view->verticalHeader()->setDefaultSectionSize(28);
 
@@ -364,16 +372,20 @@ extern "C" {
             table_view->horizontalHeader(),
             &QHeaderView::sectionClicked,
             table_view,
-            [table_view, backend](int section) {
+            [table_view, backend, sort_state](int section) {
                 auto* header = table_view->horizontalHeader();
-                auto order = Qt::AscendingOrder;
-                if (header->sortIndicatorSection() == section
-                    && header->sortIndicatorOrder() == Qt::AscendingOrder) {
-                    order = Qt::DescendingOrder;
+
+                if (sort_state->column == section) {
+                    sort_state->order = sort_state->order == Qt::AscendingOrder
+                        ? Qt::DescendingOrder
+                        : Qt::AscendingOrder;
+                } else {
+                    sort_state->column = section;
+                    sort_state->order = Qt::AscendingOrder;
                 }
 
-                header->setSortIndicator(section, order);
-                backend->sort_by(section, order == Qt::AscendingOrder);
+                backend->sort_by(section, sort_state->order == Qt::AscendingOrder);
+                header->setSortIndicator(sort_state->column, sort_state->order);
             });
 
         QObject::connect(
