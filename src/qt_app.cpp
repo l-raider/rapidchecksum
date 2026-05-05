@@ -2,19 +2,28 @@
 
 #include <QtWidgets/QApplication>
 #include <QtWidgets/QAbstractItemView>
+#include <QtWidgets/QCheckBox>
+#include <QtWidgets/QDialog>
+#include <QtWidgets/QDialogButtonBox>
 #include <QtWidgets/QFileDialog>
+#include <QtWidgets/QGridLayout>
 #include <QtWidgets/QHeaderView>
 #include <QtWidgets/QHBoxLayout>
 #include <QtWidgets/QLabel>
+#include <QtWidgets/QLineEdit>
 #include <QtWidgets/QMainWindow>
 #include <QtWidgets/QMenu>
+#include <QtWidgets/QMenuBar>
 #include <QtWidgets/QProgressBar>
 #include <QtWidgets/QPushButton>
 #include <QtWidgets/QTableView>
 #include <QtWidgets/QVBoxLayout>
 #include <QtWidgets/QWidget>
+#include <QtGui/QAction>
 #include <QtGui/QClipboard>
+#include <QtGui/QFont>
 #include <QtGui/QIcon>
+#include <QtGui/QKeySequence>
 #include <QtCore/QItemSelectionModel>
 
 #include "rapidchecksum/src/app_backend.cxxqt.h"
@@ -60,7 +69,9 @@ extern "C" {
             return;
         }
 
-        auto* central_widget = new QWidget();
+        s_main_window = new QMainWindow();
+        auto* window = s_main_window;
+        auto* central_widget = new QWidget(window);
         auto* main_layout = new QVBoxLayout(central_widget);
         auto* toolbar_layout = new QHBoxLayout();
         auto* open_files_button = new QPushButton(QStringLiteral("Open Files..."));
@@ -69,11 +80,31 @@ extern "C" {
         auto* cancel_button = new QPushButton(QStringLiteral("Cancel"));
         auto* clear_button = new QPushButton(QStringLiteral("Clear List"));
         auto* remove_button = new QPushButton(QStringLiteral("Remove Selected"));
+        auto* rename_button = new QPushButton(QStringLiteral("Rename Files"));
         auto* file_progress = new QProgressBar();
         auto* global_progress = new QProgressBar();
         auto* status_label = new QLabel();
         auto* table_view = new QTableView();
         auto* backend = new AppBackend(central_widget);
+        auto* open_files_action = new QAction(QStringLiteral("Open Files..."), window);
+        auto* open_folder_action = new QAction(QStringLiteral("Open Folder..."), window);
+        auto* remove_selected_action = new QAction(QStringLiteral("Remove Selected"), window);
+        auto* exit_action = new QAction(QStringLiteral("Exit"), window);
+        auto* hash_algorithms_action = new QAction(QStringLiteral("Hash Algorithms..."), window);
+        auto* file_renaming_action = new QAction(QStringLiteral("File Renaming..."), window);
+        QFont fixed_font(QStringLiteral("monospace"));
+
+        fixed_font.setStyleHint(QFont::TypeWriter);
+
+        open_files_action->setShortcut(QKeySequence(QStringLiteral("Ctrl+O")));
+        open_folder_action->setShortcut(QKeySequence(QStringLiteral("Ctrl+L")));
+        remove_selected_action->setShortcut(QKeySequence(QStringLiteral("Delete")));
+        exit_action->setShortcut(QKeySequence(QStringLiteral("Ctrl+Q")));
+
+        window->addAction(open_files_action);
+        window->addAction(open_folder_action);
+        window->addAction(remove_selected_action);
+        window->addAction(exit_action);
 
         main_layout->setContentsMargins(6, 6, 6, 6);
         main_layout->setSpacing(4);
@@ -85,6 +116,7 @@ extern "C" {
         toolbar_layout->addWidget(cancel_button);
         toolbar_layout->addWidget(clear_button);
         toolbar_layout->addWidget(remove_button);
+        toolbar_layout->addWidget(rename_button);
         toolbar_layout->addStretch();
 
         file_progress->setRange(0, 1000);
@@ -103,6 +135,169 @@ extern "C" {
         table_view->horizontalHeader()->setSectionsClickable(true);
         table_view->horizontalHeader()->setSortIndicatorShown(true);
         table_view->verticalHeader()->setVisible(false);
+
+        auto open_files = [backend, window](bool) {
+            const auto files = QFileDialog::getOpenFileNames(
+                window,
+                QStringLiteral("Select files to hash"));
+            if (!files.isEmpty()) {
+                backend->add_files(files);
+            }
+        };
+
+        auto open_folder = [backend, window](bool) {
+            const auto folder = QFileDialog::getExistingDirectory(
+                window,
+                QStringLiteral("Select folder to add"));
+            if (!folder.isEmpty()) {
+                backend->add_folder(folder);
+            }
+        };
+
+        auto show_hash_algorithms_dialog = [backend, window](bool) {
+            QDialog dialog(window);
+            dialog.setWindowTitle(QStringLiteral("Settings - Hash Algorithms"));
+            dialog.setModal(true);
+
+            auto* layout = new QVBoxLayout(&dialog);
+            auto* crc32 = new QCheckBox(QStringLiteral("CRC32"), &dialog);
+            auto* md5 = new QCheckBox(QStringLiteral("MD5"), &dialog);
+            auto* sha1 = new QCheckBox(QStringLiteral("SHA1"), &dialog);
+            auto* sha256 = new QCheckBox(QStringLiteral("SHA256"), &dialog);
+            auto* sha512 = new QCheckBox(QStringLiteral("SHA512"), &dialog);
+            auto* buttons = new QDialogButtonBox(
+                QDialogButtonBox::Ok | QDialogButtonBox::Cancel,
+                &dialog);
+
+            crc32->setChecked(backend->getSetting_crc32());
+            md5->setChecked(backend->getSetting_md5());
+            sha1->setChecked(backend->getSetting_sha1());
+            sha256->setChecked(backend->getSetting_sha256());
+            sha512->setChecked(backend->getSetting_sha512());
+
+            layout->addWidget(crc32);
+            layout->addWidget(md5);
+            layout->addWidget(sha1);
+            layout->addWidget(sha256);
+            layout->addWidget(sha512);
+            layout->addWidget(buttons);
+
+            QObject::connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+            QObject::connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+
+            if (dialog.exec() == QDialog::Accepted) {
+                backend->setSetting_crc32(crc32->isChecked());
+                backend->setSetting_md5(md5->isChecked());
+                backend->setSetting_sha1(sha1->isChecked());
+                backend->setSetting_sha256(sha256->isChecked());
+                backend->setSetting_sha512(sha512->isChecked());
+                backend->apply_settings();
+            }
+        };
+
+        auto show_file_renaming_dialog = [backend, window, fixed_font](bool) {
+            QDialog dialog(window);
+            dialog.setWindowTitle(QStringLiteral("Settings - File Renaming"));
+            dialog.setModal(true);
+            dialog.resize(480, dialog.sizeHint().height());
+
+            auto* layout = new QVBoxLayout(&dialog);
+            auto* pattern_label = new QLabel(QStringLiteral("Rename pattern:"), &dialog);
+            auto* pattern_edit = new QLineEdit(backend->getSetting_rename_pattern(), &dialog);
+            auto* tags_label = new QLabel(QStringLiteral("Available tags:"), &dialog);
+            auto* tags_layout = new QGridLayout();
+            auto* example_label = new QLabel(
+                QStringLiteral("Example: %FILENAME%_%CRC%.%FILEEXT%"),
+                &dialog);
+            auto* buttons = new QDialogButtonBox(
+                QDialogButtonBox::Ok | QDialogButtonBox::Cancel,
+                &dialog);
+
+            tags_label->setStyleSheet(QStringLiteral("font-weight: bold;"));
+            example_label->setStyleSheet(QStringLiteral("font-style: italic; color: palette(mid);"));
+
+            struct RenameTagRow {
+                const char* tag;
+                const char* description;
+            };
+
+            const RenameTagRow rename_tags[] = {
+                {"%FILENAME%", "Original filename (without extension)"},
+                {"%FILEEXT%", "File extension (without dot)"},
+                {"%CRC%", "CRC32 hash"},
+                {"%MD5%", "MD5 hash"},
+                {"%SHA1%", "SHA1 hash"},
+                {"%SHA256%", "SHA256 hash"},
+                {"%SHA512%", "SHA512 hash"},
+            };
+
+            for (int row = 0; row < static_cast<int>(std::size(rename_tags)); ++row) {
+                auto* tag_label = new QLabel(QString::fromLatin1(rename_tags[row].tag), &dialog);
+                auto* description_label = new QLabel(QString::fromLatin1(rename_tags[row].description), &dialog);
+                tag_label->setFont(fixed_font);
+                tags_layout->addWidget(tag_label, row, 0);
+                tags_layout->addWidget(description_label, row, 1);
+            }
+
+            layout->addWidget(pattern_label);
+            layout->addWidget(pattern_edit);
+            layout->addWidget(tags_label);
+            layout->addLayout(tags_layout);
+            layout->addWidget(example_label);
+            layout->addWidget(buttons);
+
+            QObject::connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+            QObject::connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+
+            if (dialog.exec() == QDialog::Accepted) {
+                backend->setSetting_rename_pattern(pattern_edit->text());
+                backend->apply_rename_settings();
+            }
+        };
+
+        auto confirm_rename_files = [backend, window](bool) {
+            QDialog dialog(window);
+            dialog.setWindowTitle(QStringLiteral("Rename Files"));
+            dialog.setModal(true);
+            dialog.resize(460, dialog.sizeHint().height());
+
+            auto* layout = new QVBoxLayout(&dialog);
+            auto* description = new QLabel(
+                QStringLiteral("This will permanently rename all hashed files on disk according to the current rename pattern."),
+                &dialog);
+            auto* preview_title = new QLabel(QStringLiteral("Preview (first file):"), &dialog);
+            auto* preview_label = new QLabel(backend->get_rename_preview(), &dialog);
+            auto* confirm_checkbox = new QCheckBox(
+                QStringLiteral("I confirm I want to rename these files"),
+                &dialog);
+            auto* buttons = new QDialogButtonBox(&dialog);
+            auto* rename_confirm_button = buttons->addButton(
+                QStringLiteral("Rename"),
+                QDialogButtonBox::AcceptRole);
+            buttons->addButton(QDialogButtonBox::Cancel);
+
+            description->setWordWrap(true);
+            preview_title->setStyleSheet(QStringLiteral("font-weight: bold;"));
+            preview_label->setWordWrap(true);
+            preview_label->setTextInteractionFlags(Qt::TextSelectableByMouse);
+            preview_title->setVisible(!preview_label->text().isEmpty());
+            preview_label->setVisible(!preview_label->text().isEmpty());
+            rename_confirm_button->setEnabled(false);
+
+            layout->addWidget(description);
+            layout->addWidget(preview_title);
+            layout->addWidget(preview_label);
+            layout->addWidget(confirm_checkbox);
+            layout->addWidget(buttons);
+
+            QObject::connect(confirm_checkbox, &QCheckBox::toggled, rename_confirm_button, &QPushButton::setEnabled);
+            QObject::connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+            QObject::connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+
+            if (dialog.exec() == QDialog::Accepted) {
+                backend->rename_files();
+            }
+        };
 
         QObject::connect(
             table_view->selectionModel(),
@@ -173,8 +368,8 @@ extern "C" {
                     });
                 }
 
-                auto* open_folder_action = menu.addAction(QStringLiteral("Open Containing Folder"));
-                QObject::connect(open_folder_action, &QAction::triggered, &menu, [backend]() {
+                auto* open_folder_action_menu = menu.addAction(QStringLiteral("Open Containing Folder"));
+                QObject::connect(open_folder_action_menu, &QAction::triggered, &menu, [backend]() {
                     backend->open_folder();
                 });
 
@@ -211,44 +406,42 @@ extern "C" {
                 menu.exec(table_view->viewport()->mapToGlobal(pos));
             });
 
-        QObject::connect(
-            open_files_button,
-            &QPushButton::clicked,
-            table_view,
-            [backend, central_widget]() {
-                const auto files = QFileDialog::getOpenFileNames(
-                    central_widget,
-                    QStringLiteral("Select files to hash"));
-                if (!files.isEmpty()) {
-                    backend->add_files(files);
-                }
-            });
+        QObject::connect(open_files_action, &QAction::triggered, window, open_files);
+        QObject::connect(open_folder_action, &QAction::triggered, window, open_folder);
+        QObject::connect(hash_algorithms_action, &QAction::triggered, window, show_hash_algorithms_dialog);
+        QObject::connect(file_renaming_action, &QAction::triggered, window, show_file_renaming_dialog);
+        QObject::connect(exit_action, &QAction::triggered, window, [](bool) {
+            QApplication::quit();
+        });
 
-        QObject::connect(
-            open_folder_button,
-            &QPushButton::clicked,
-            table_view,
-            [backend, central_widget]() {
-                const auto folder = QFileDialog::getExistingDirectory(
-                    central_widget,
-                    QStringLiteral("Select folder to add"));
-                if (!folder.isEmpty()) {
-                    backend->add_folder(folder);
-                }
-            });
-
-        QObject::connect(start_button, &QPushButton::clicked, backend, [backend]() {
+        QObject::connect(open_files_button, &QPushButton::clicked, window, open_files);
+        QObject::connect(open_folder_button, &QPushButton::clicked, window, open_folder);
+        QObject::connect(start_button, &QPushButton::clicked, backend, [backend](bool) {
             backend->start_hashing();
         });
-        QObject::connect(cancel_button, &QPushButton::clicked, backend, [backend]() {
+        QObject::connect(cancel_button, &QPushButton::clicked, backend, [backend](bool) {
             backend->cancel_hashing();
         });
-        QObject::connect(clear_button, &QPushButton::clicked, backend, [backend]() {
+        QObject::connect(clear_button, &QPushButton::clicked, backend, [backend](bool) {
             backend->clear_list();
         });
-        QObject::connect(remove_button, &QPushButton::clicked, backend, [backend]() {
+        QObject::connect(remove_button, &QPushButton::clicked, backend, [backend](bool) {
             backend->remove_selected();
         });
+        QObject::connect(remove_selected_action, &QAction::triggered, backend, [backend](bool) {
+            backend->remove_selected();
+        });
+        QObject::connect(rename_button, &QPushButton::clicked, window, confirm_rename_files);
+
+        auto* file_menu = window->menuBar()->addMenu(QStringLiteral("File"));
+        file_menu->addAction(open_files_action);
+        file_menu->addAction(open_folder_action);
+        file_menu->addSeparator();
+        file_menu->addAction(exit_action);
+
+        auto* settings_menu = window->menuBar()->addMenu(QStringLiteral("Settings"));
+        settings_menu->addAction(hash_algorithms_action);
+        settings_menu->addAction(file_renaming_action);
 
         auto sync_widget_state = [backend,
                                   open_files_button,
@@ -257,6 +450,10 @@ extern "C" {
                                   cancel_button,
                                   clear_button,
                                   remove_button,
+                                  rename_button,
+                                  open_files_action,
+                                  open_folder_action,
+                                  remove_selected_action,
                                   file_progress,
                                   global_progress,
                                   status_label]() {
@@ -270,6 +467,10 @@ extern "C" {
             cancel_button->setEnabled(is_hashing);
             clear_button->setEnabled(!is_hashing && has_files);
             remove_button->setEnabled(!is_hashing && has_selection);
+            rename_button->setEnabled(!is_hashing && has_files);
+            open_files_action->setEnabled(!is_hashing);
+            open_folder_action->setEnabled(!is_hashing);
+            remove_selected_action->setEnabled(!is_hashing && has_selection);
 
             file_progress->setVisible(is_hashing);
             global_progress->setVisible(is_hashing);
@@ -293,11 +494,10 @@ extern "C" {
 
         sync_widget_state();
 
-        s_main_window = new QMainWindow();
-        s_main_window->setWindowTitle(widget_window_title(backend));
-        s_main_window->resize(1000, 700);
-        s_main_window->setCentralWidget(central_widget);
-        s_main_window->show();
+        window->setWindowTitle(widget_window_title(backend));
+        window->resize(1000, 700);
+        window->setCentralWidget(central_widget);
+        window->show();
     }
 
     void qt_set_clipboard(const char* text)
