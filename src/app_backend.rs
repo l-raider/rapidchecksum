@@ -772,7 +772,7 @@ impl qobject::AppBackend {
                 let raw_stem = path.file_stem()
                     .map(|s| s.to_string_lossy().to_string())
                     .unwrap_or_default();
-                let stem = prepare_rename_stem(&pattern, &raw_stem);
+                let stem = prepare_rename_stem(&pattern, &raw_stem, entry);
                 let ext = path.extension()
                     .map(|s| s.to_string_lossy().to_string())
                     .unwrap_or_default();
@@ -853,7 +853,7 @@ impl qobject::AppBackend {
             let raw_stem = path.file_stem()
                 .map(|s| s.to_string_lossy().to_string())
                 .unwrap_or_default();
-            let stem = prepare_rename_stem(pattern, &raw_stem);
+            let stem = prepare_rename_stem(pattern, &raw_stem, entry);
             let ext = path.extension()
                 .map(|s| s.to_string_lossy().to_string())
                 .unwrap_or_default();
@@ -957,12 +957,17 @@ fn render_rename_pattern(
         )
 }
 
-fn prepare_rename_stem(pattern: &str, raw_stem: &str) -> String {
-    if pattern.contains("%CRC%") {
-        strip_crc32_tags(raw_stem)
-    } else {
-        raw_stem.to_string()
+fn prepare_rename_stem(pattern: &str, raw_stem: &str, entry: &FileEntry) -> String {
+    if !pattern.contains("%CRC%") {
+        return raw_stem.to_string();
     }
+
+    let crc32 = entry.hash_value(HashKind::CRC32);
+    if crc32.is_empty() {
+        return raw_stem.to_string();
+    }
+
+    strip_matching_crc32_suffix(raw_stem, crc32)
 }
 
 fn save_hash_file_status(
@@ -981,30 +986,40 @@ fn save_hash_file_status(
     }
 }
 
-/// Remove all `[XXXXXXXX]` (8 hex digit) CRC32 tags from a filename stem.
-fn strip_crc32_tags(stem: &str) -> String {
-    let mut result = String::with_capacity(stem.len());
-    let bytes = stem.as_bytes();
-    let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == b'['
-            && i + 10 <= bytes.len()
-            && bytes[i + 9] == b']'
-            && bytes[i + 1..i + 9].iter().all(|b| b.is_ascii_hexdigit())
-        {
-            i += 10; // skip `[XXXXXXXX]`
-        } else {
-            // Advance past the entire UTF-8 character to avoid corrupting
-            // multi-byte sequences (e.g. accented or CJK characters).
-            let start = i;
-            i += 1;
-            while i < bytes.len() && bytes[i] & 0xC0 == 0x80 {
-                i += 1;
-            }
-            result.push_str(&stem[start..i]);
+fn strip_matching_crc32_suffix(stem: &str, crc32: &str) -> String {
+    let mut normalized = stem.to_string();
+
+    loop {
+        let bytes = normalized.as_bytes();
+        if bytes.len() < 10 || bytes[bytes.len() - 1] != b']' {
+            break;
         }
+
+        let Some(open_idx) = bytes.iter().rposition(|&b| b == b'[') else {
+            break;
+        };
+        if open_idx + 10 != bytes.len() {
+            break;
+        }
+
+        let candidate = &normalized[open_idx + 1..open_idx + 9];
+        if !candidate.eq_ignore_ascii_case(crc32) {
+            break;
+        }
+
+        let mut new_len = open_idx;
+        while new_len > 0 {
+            let prev = normalized[..new_len].chars().next_back().unwrap();
+            if prev.is_ascii_whitespace() || matches!(prev, '_' | '-' | '.') {
+                new_len -= prev.len_utf8();
+            } else {
+                break;
+            }
+        }
+        normalized.truncate(new_len);
     }
-    result
+
+    normalized
 }
 
 #[cfg(test)]
@@ -1068,10 +1083,56 @@ mod tests {
             .hashes
             .insert(HashKind::CRC32, "CAFEBABE".to_string());
 
-        let stem = prepare_rename_stem("%FILENAME%.%FILEEXT%", "movie [DEADBEEF]");
+        let stem = prepare_rename_stem("%FILENAME%.%FILEEXT%", "movie [DEADBEEF]", &entry);
         let new_name = render_rename_pattern("%FILENAME%.%FILEEXT%", &stem, "mkv", &entry, true);
 
         assert_eq!(new_name, "movie [DEADBEEF].mkv");
+    }
+
+    #[test]
+    fn crc_suffix_rename_pattern_is_idempotent() {
+        let mut entry = FileEntry::default();
+        entry
+            .hashes
+            .insert(HashKind::CRC32, "CAFEBABE".to_string());
+
+        let stem = prepare_rename_stem(
+            "%FILENAME% [%CRC%].%FILEEXT%",
+            "movie [CAFEBABE]",
+            &entry,
+        );
+        let new_name = render_rename_pattern(
+            "%FILENAME% [%CRC%].%FILEEXT%",
+            &stem,
+            "mkv",
+            &entry,
+            true,
+        );
+
+        assert_eq!(new_name, "movie [CAFEBABE].mkv");
+    }
+
+    #[test]
+    fn crc_suffix_rename_pattern_preserves_unrelated_bracketed_hex_segments() {
+        let mut entry = FileEntry::default();
+        entry
+            .hashes
+            .insert(HashKind::CRC32, "CAFEBABE".to_string());
+
+        let stem = prepare_rename_stem(
+            "%FILENAME% [%CRC%].%FILEEXT%",
+            "movie [DEADBEEF]",
+            &entry,
+        );
+        let new_name = render_rename_pattern(
+            "%FILENAME% [%CRC%].%FILEEXT%",
+            &stem,
+            "mkv",
+            &entry,
+            true,
+        );
+
+        assert_eq!(new_name, "movie [DEADBEEF] [CAFEBABE].mkv");
     }
 
     #[test]
