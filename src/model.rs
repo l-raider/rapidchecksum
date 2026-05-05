@@ -71,15 +71,16 @@ impl FileEntry {
 /// Extract a CRC32 hash embedded in a filename as `[XXXXXXXX]` (exactly 8 hex digits).
 fn parse_crc32_from_filename(filename: &str) -> Option<String> {
     let bytes = filename.as_bytes();
+    let mut parsed = None;
     for i in 0..bytes.len() {
         if bytes[i] == b'[' && i + 10 <= bytes.len() && bytes[i + 9] == b']' {
             let candidate = &filename[i + 1..i + 9];
             if candidate.bytes().all(|b| b.is_ascii_hexdigit()) {
-                return Some(candidate.to_uppercase());
+                parsed = Some(candidate.to_uppercase());
             }
         }
     }
-    None
+    parsed
 }
 
 #[cfg(test)]
@@ -94,5 +95,13 @@ mod tests {
 
         assert_eq!(entry.formatted_hash_value(HashKind::MD5, true), "A1B2C3D4");
         assert_eq!(entry.formatted_hash_value(HashKind::CRC32, false), "deadbeef");
+    }
+
+    #[test]
+    fn parse_crc32_from_filename_prefers_last_tag() {
+        assert_eq!(
+            parse_crc32_from_filename("movie [DEADBEEF] [CAFEBABE].mkv"),
+            Some("CAFEBABE".to_string())
+        );
     }
 }
