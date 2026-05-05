@@ -1,5 +1,5 @@
 #![allow(unused_attributes)]
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
@@ -174,7 +174,7 @@ pub mod qobject {
         #[qinvokable]
         fn open_folder(self: &AppBackend);
         #[qinvokable]
-        fn save_hash_file(self: &AppBackend, algo: i32, path: &QString);
+        fn save_hash_file(self: Pin<&mut AppBackend>, algo: i32, path: &QString);
         #[qinvokable]
         fn apply_settings(self: Pin<&mut AppBackend>);
         #[qinvokable]
@@ -693,7 +693,7 @@ impl qobject::AppBackend {
         }
     }
 
-    fn save_hash_file(&self, algo: i32, path: &QString) {
+    fn save_hash_file(mut self: Pin<&mut Self>, algo: i32, path: &QString) {
         let kind = match algo {
             0 => HashKind::CRC32,
             1 => HashKind::MD5,
@@ -702,9 +702,17 @@ impl qobject::AppBackend {
             4 => HashKind::SHA512,
             _ => return,
         };
-        let hash_uppercase = self.rust().config.hash_uppercase;
         let output_path = PathBuf::from(path.to_string());
-        let _ = write_hash_file(&self.rust().entries, &output_path, kind, hash_uppercase);
+        let status = {
+            let rust = self.rust();
+            save_hash_file_status(
+                &rust.entries,
+                &output_path,
+                kind,
+                rust.config.hash_uppercase,
+            )
+        };
+        self.as_mut().set_status_text(QString::from(&status));
     }
 
     fn apply_settings(mut self: Pin<&mut Self>) {
@@ -950,6 +958,22 @@ fn render_rename_pattern(
         )
 }
 
+fn save_hash_file_status(
+    entries: &[FileEntry],
+    output_path: &Path,
+    kind: HashKind,
+    uppercase: bool,
+) -> String {
+    match write_hash_file(entries, output_path, kind, uppercase) {
+        Ok(()) => format!(
+            "Saved {} hash file to {}",
+            kind.name(),
+            output_path.display()
+        ),
+        Err(err) => format!("Failed to save {} hash file: {}", kind.name(), err),
+    }
+}
+
 /// Remove all `[XXXXXXXX]` (8 hex digit) CRC32 tags from a filename stem.
 fn strip_crc32_tags(stem: &str) -> String {
     let mut result = String::with_capacity(stem.len());
@@ -1028,5 +1052,16 @@ mod tests {
         let new_name = render_rename_pattern("%FILENAME%.%FILEEXT%", "README", "", &entry, true);
 
         assert_eq!(new_name, "README");
+    }
+
+    #[test]
+    fn save_hash_file_status_reports_write_errors() {
+        let output_dir = create_temp_dir("save-hash-file-status");
+
+        let status = save_hash_file_status(&[], &output_dir, HashKind::CRC32, true);
+
+        assert!(status.starts_with("Failed to save CRC32 hash file:"));
+
+        fs::remove_dir_all(&output_dir).unwrap();
     }
 }
