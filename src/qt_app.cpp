@@ -16,14 +16,17 @@
 #include <QtWidgets/QMenuBar>
 #include <QtWidgets/QProgressBar>
 #include <QtWidgets/QPushButton>
+#include <QtWidgets/QStyledItemDelegate>
 #include <QtWidgets/QTableView>
 #include <QtWidgets/QVBoxLayout>
 #include <QtWidgets/QWidget>
 #include <QtGui/QAction>
 #include <QtGui/QClipboard>
 #include <QtGui/QFont>
+#include <QtGui/QFontDatabase>
 #include <QtGui/QIcon>
 #include <QtGui/QKeySequence>
+#include <QtGui/QPalette>
 #include <QtCore/QItemSelectionModel>
 
 #include "rapidchecksum/src/app_backend.cxxqt.h"
@@ -34,6 +37,56 @@ static char*  s_argv[]  = { s_argv0, nullptr };
 
 static QApplication* s_app = nullptr;
 static QMainWindow*  s_main_window = nullptr;
+
+namespace {
+
+constexpr int ROLE_IS_ERROR = 256;
+constexpr int ROLE_VERIFY_STATUS = 258;
+
+class ResultsTableDelegate final : public QStyledItemDelegate {
+public:
+    explicit ResultsTableDelegate(QObject* parent = nullptr)
+        : QStyledItemDelegate(parent)
+        , m_fixed_font(QFontDatabase::systemFont(QFontDatabase::FixedFont))
+    {
+    }
+
+    void initStyleOption(QStyleOptionViewItem* option, const QModelIndex& index) const override
+    {
+        QStyledItemDelegate::initStyleOption(option, index);
+
+        const bool is_selected = option->state & QStyle::State_Selected;
+        const bool is_error = index.data(ROLE_IS_ERROR).toBool();
+        const int verify_status = index.data(ROLE_VERIFY_STATUS).toInt();
+        const int last_column = index.model()->columnCount(QModelIndex()) - 1;
+
+        option->displayAlignment = Qt::AlignLeft | Qt::AlignVCenter;
+
+        if (index.column() > 0 && index.column() < last_column) {
+            option->font = m_fixed_font;
+        }
+
+        if (!is_selected && is_error) {
+            const QColor error_background = QColor::fromRgbF(0.37, 0.07, 0.07, 1.0);
+            option->backgroundBrush = error_background;
+            option->palette.setColor(QPalette::Base, error_background);
+            option->palette.setColor(QPalette::AlternateBase, error_background);
+        }
+
+        if (!is_selected && index.column() == last_column - 1) {
+            if (verify_status == 1) {
+                option->palette.setColor(QPalette::Text, QColor(QStringLiteral("#4caf50")));
+            } else if (verify_status == 2) {
+                option->palette.setColor(QPalette::Text, QColor(QStringLiteral("#f44336")));
+            }
+        }
+    }
+
+private:
+    QFont m_fixed_font;
+};
+
+}
 
 static QString widget_window_title(const AppBackend* backend)
 {
@@ -92,9 +145,7 @@ extern "C" {
         auto* exit_action = new QAction(QStringLiteral("Exit"), window);
         auto* hash_algorithms_action = new QAction(QStringLiteral("Hash Algorithms..."), window);
         auto* file_renaming_action = new QAction(QStringLiteral("File Renaming..."), window);
-        QFont fixed_font(QStringLiteral("monospace"));
-
-        fixed_font.setStyleHint(QFont::TypeWriter);
+        QFont fixed_font = QFontDatabase::systemFont(QFontDatabase::FixedFont);
 
         open_files_action->setShortcut(QKeySequence(QStringLiteral("Ctrl+O")));
         open_folder_action->setShortcut(QKeySequence(QStringLiteral("Ctrl+L")));
@@ -128,13 +179,15 @@ extern "C" {
         table_view->setModel(backend);
         table_view->setSelectionBehavior(QAbstractItemView::SelectRows);
         table_view->setSelectionMode(QAbstractItemView::SingleSelection);
-        table_view->setAlternatingRowColors(false);
+        table_view->setAlternatingRowColors(true);
         table_view->setContextMenuPolicy(Qt::CustomContextMenu);
+        table_view->setItemDelegate(new ResultsTableDelegate(table_view));
         table_view->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
         table_view->horizontalHeader()->setStretchLastSection(true);
         table_view->horizontalHeader()->setSectionsClickable(true);
         table_view->horizontalHeader()->setSortIndicatorShown(true);
         table_view->verticalHeader()->setVisible(false);
+        table_view->verticalHeader()->setDefaultSectionSize(28);
 
         auto open_files = [backend, window](bool) {
             const auto files = QFileDialog::getOpenFileNames(
