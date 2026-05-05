@@ -931,30 +931,50 @@ fn render_rename_pattern(
         format!(".{ext}")
     };
 
-    pattern
-        .replace("%FILENAME%", stem)
-        .replace(".%FILEEXT%", &ext_with_dot)
-        .replace("%FILEEXT%", ext)
-        .replace(
-            "%CRC%",
-            &entry.formatted_hash_value(HashKind::CRC32, hash_uppercase),
-        )
-        .replace(
-            "%MD5%",
-            &entry.formatted_hash_value(HashKind::MD5, hash_uppercase),
-        )
-        .replace(
-            "%SHA1%",
-            &entry.formatted_hash_value(HashKind::SHA1, hash_uppercase),
-        )
-        .replace(
-            "%SHA256%",
-            &entry.formatted_hash_value(HashKind::SHA256, hash_uppercase),
-        )
-        .replace(
-            "%SHA512%",
-            &entry.formatted_hash_value(HashKind::SHA512, hash_uppercase),
-        )
+    let crc = entry.formatted_hash_value(HashKind::CRC32, hash_uppercase);
+    let md5 = entry.formatted_hash_value(HashKind::MD5, hash_uppercase);
+    let sha1 = entry.formatted_hash_value(HashKind::SHA1, hash_uppercase);
+    let sha256 = entry.formatted_hash_value(HashKind::SHA256, hash_uppercase);
+    let sha512 = entry.formatted_hash_value(HashKind::SHA512, hash_uppercase);
+
+    let mut rendered = String::with_capacity(pattern.len() + stem.len() + ext.len());
+    let mut index = 0;
+
+    while index < pattern.len() {
+        let rest = &pattern[index..];
+        if rest.starts_with("%FILENAME%") {
+            rendered.push_str(stem);
+            index += "%FILENAME%".len();
+        } else if rest.starts_with(".%FILEEXT%") {
+            rendered.push_str(&ext_with_dot);
+            index += ".%FILEEXT%".len();
+        } else if rest.starts_with("%FILEEXT%") {
+            rendered.push_str(ext);
+            index += "%FILEEXT%".len();
+        } else if rest.starts_with("%CRC%") {
+            rendered.push_str(&crc);
+            index += "%CRC%".len();
+        } else if rest.starts_with("%MD5%") {
+            rendered.push_str(&md5);
+            index += "%MD5%".len();
+        } else if rest.starts_with("%SHA1%") {
+            rendered.push_str(&sha1);
+            index += "%SHA1%".len();
+        } else if rest.starts_with("%SHA256%") {
+            rendered.push_str(&sha256);
+            index += "%SHA256%".len();
+        } else if rest.starts_with("%SHA512%") {
+            rendered.push_str(&sha512);
+            index += "%SHA512%".len();
+        } else if let Some(ch) = rest.chars().next() {
+            rendered.push(ch);
+            index += ch.len_utf8();
+        } else {
+            break;
+        }
+    }
+
+    rendered
 }
 
 fn prepare_rename_stem(pattern: &str, raw_stem: &str, entry: &FileEntry) -> String {
@@ -1133,6 +1153,29 @@ mod tests {
         );
 
         assert_eq!(new_name, "movie [DEADBEEF] [CAFEBABE].mkv");
+    }
+
+    #[test]
+    fn render_rename_pattern_preserves_literal_placeholders_in_filename() {
+        let mut entry = FileEntry::default();
+        entry
+            .hashes
+            .insert(HashKind::CRC32, "DEADBEEF".to_string());
+
+        let stem = prepare_rename_stem(
+            "%FILENAME%_%CRC%.%FILEEXT%",
+            "movie_%CRC%_backup",
+            &entry,
+        );
+        let new_name = render_rename_pattern(
+            "%FILENAME%_%CRC%.%FILEEXT%",
+            &stem,
+            "mkv",
+            &entry,
+            true,
+        );
+
+        assert_eq!(new_name, "movie_%CRC%_backup_DEADBEEF.mkv");
     }
 
     #[test]
