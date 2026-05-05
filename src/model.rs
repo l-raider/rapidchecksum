@@ -35,6 +35,15 @@ impl FileEntry {
         self.hashes.get(&kind).map(|s| s.as_str()).unwrap_or("")
     }
 
+    pub fn formatted_hash_value(&self, kind: HashKind, uppercase: bool) -> String {
+        let value = self.hash_value(kind);
+        if uppercase {
+            value.to_ascii_uppercase()
+        } else {
+            value.to_ascii_lowercase()
+        }
+    }
+
     /// Re-parse the CRC32 tag from the current filename.
     /// Must be called whenever `filename` is updated (e.g. after a rename).
     pub fn refresh_expected_crc32(&mut self) {
@@ -71,4 +80,19 @@ fn parse_crc32_from_filename(filename: &str) -> Option<String> {
         }
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn formats_hash_values_in_requested_case() {
+        let mut entry = FileEntry::default();
+        entry.hashes.insert(HashKind::MD5, "a1b2c3d4".to_string());
+        entry.hashes.insert(HashKind::CRC32, "DEADBEEF".to_string());
+
+        assert_eq!(entry.formatted_hash_value(HashKind::MD5, true), "A1B2C3D4");
+        assert_eq!(entry.formatted_hash_value(HashKind::CRC32, false), "deadbeef");
+    }
 }

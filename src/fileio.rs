@@ -12,6 +12,7 @@ pub fn write_hash_file(
     entries: &[FileEntry],
     output_path: &Path,
     kind: HashKind,
+    uppercase: bool,
 ) -> io::Result<()> {
     let file = File::create(output_path)?;
     let mut writer = BufWriter::new(file);
@@ -21,7 +22,7 @@ pub fn write_hash_file(
     writeln!(writer, ";")?;
 
     for entry in entries {
-        let hash = entry.hash_value(kind);
+        let hash = entry.formatted_hash_value(kind, uppercase);
         if hash.is_empty() {
             continue;
         }

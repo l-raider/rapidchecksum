@@ -22,6 +22,7 @@
 #include <QtWidgets/QVBoxLayout>
 #include <QtWidgets/QWidget>
 #include <QtGui/QAction>
+#include <QtGui/QActionGroup>
 #include <QtGui/QClipboard>
 #include <QtGui/QFont>
 #include <QtGui/QFontDatabase>
@@ -221,8 +222,22 @@ extern "C" {
         auto* exit_action = new QAction(QStringLiteral("Exit"), window);
         auto* hash_algorithms_action = new QAction(QStringLiteral("Hash Algorithms..."), window);
         auto* file_renaming_action = new QAction(QStringLiteral("File Renaming..."), window);
+        auto* hash_casing_menu = new QMenu(QStringLiteral("Hash Casing"), window);
+        auto* uppercase_hash_action = new QAction(QStringLiteral("Upper Case"), hash_casing_menu);
+        auto* lowercase_hash_action = new QAction(QStringLiteral("Lower Case"), hash_casing_menu);
+        auto* hash_casing_group = new QActionGroup(window);
         QFont fixed_font = QFontDatabase::systemFont(QFontDatabase::FixedFont);
         auto sort_state = std::make_shared<SortState>();
+
+        uppercase_hash_action->setCheckable(true);
+        lowercase_hash_action->setCheckable(true);
+        hash_casing_group->setExclusive(true);
+        hash_casing_group->addAction(uppercase_hash_action);
+        hash_casing_group->addAction(lowercase_hash_action);
+        uppercase_hash_action->setChecked(backend->getSetting_hash_uppercase());
+        lowercase_hash_action->setChecked(!backend->getSetting_hash_uppercase());
+        hash_casing_menu->addAction(uppercase_hash_action);
+        hash_casing_menu->addAction(lowercase_hash_action);
 
         open_files_action->setShortcut(QKeySequence(QStringLiteral("Ctrl+O")));
         open_folder_action->setShortcut(QKeySequence(QStringLiteral("Ctrl+L")));
@@ -389,6 +404,12 @@ extern "C" {
             }
         };
 
+        auto apply_hash_casing = [backend, table_view, uppercase_hash_action](bool) {
+            backend->setSetting_hash_uppercase(uppercase_hash_action->isChecked());
+            backend->apply_settings();
+            apply_table_column_width_hints(table_view);
+        };
+
         auto confirm_rename_files = [backend, window](bool) {
             QDialog dialog(window);
             dialog.setWindowTitle(QStringLiteral("Rename Files"));
@@ -548,6 +569,8 @@ extern "C" {
         QObject::connect(open_folder_action, &QAction::triggered, window, open_folder);
         QObject::connect(hash_algorithms_action, &QAction::triggered, window, show_hash_algorithms_dialog);
         QObject::connect(file_renaming_action, &QAction::triggered, window, show_file_renaming_dialog);
+        QObject::connect(uppercase_hash_action, &QAction::triggered, window, apply_hash_casing);
+        QObject::connect(lowercase_hash_action, &QAction::triggered, window, apply_hash_casing);
         QObject::connect(exit_action, &QAction::triggered, window, [](bool) {
             QApplication::quit();
         });
@@ -579,6 +602,7 @@ extern "C" {
 
         auto* settings_menu = window->menuBar()->addMenu(QStringLiteral("Settings"));
         settings_menu->addAction(hash_algorithms_action);
+        settings_menu->addMenu(hash_casing_menu);
         settings_menu->addAction(file_renaming_action);
 
         auto sync_widget_state = [backend,

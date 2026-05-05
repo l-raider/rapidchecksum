@@ -77,6 +77,7 @@ pub mod qobject {
         #[qproperty(bool, setting_sha1)]
         #[qproperty(bool, setting_sha256)]
         #[qproperty(bool, setting_sha512)]
+        #[qproperty(bool, setting_hash_uppercase)]
         #[qproperty(i32, file_count)]
         #[qproperty(QString, setting_rename_pattern)]
         #[qproperty(QString, app_version)]
@@ -215,6 +216,7 @@ pub struct AppBackendRust {
     setting_sha1: bool,
     setting_sha256: bool,
     setting_sha512: bool,
+    setting_hash_uppercase: bool,
     file_count: i32,
     setting_rename_pattern: QString,
     app_version: QString,
@@ -236,6 +238,7 @@ impl Default for AppBackendRust {
             setting_sha1: config.hash_sha1,
             setting_sha256: config.hash_sha256,
             setting_sha512: config.hash_sha512,
+            setting_hash_uppercase: config.hash_uppercase,
             config,
             hash_generation: 0,
             file_count: 0,
@@ -272,13 +275,14 @@ impl qobject::AppBackend {
         let entry = &entries[row];
         let visible_kinds = &rust.visible_kinds;
         let num_hash_cols = visible_kinds.len();
+        let hash_uppercase = rust.config.hash_uppercase;
         match role {
             ROLE_DISPLAY => {
                 if col == 0 {
                     QVariant::from(&QString::from(&entry.filename))
                 } else if col >= 1 && col <= num_hash_cols {
                     let kind = visible_kinds[col - 1];
-                    QVariant::from(&QString::from(entry.hash_value(kind)))
+                    QVariant::from(&QString::from(&entry.formatted_hash_value(kind, hash_uppercase)))
                 } else if col == num_hash_cols + 1 {
                     let text = match entry.verify_status() {
                         1 => "\u{2713} Match",
@@ -657,19 +661,22 @@ impl qobject::AppBackend {
         if row < 0 {
             return;
         }
-        let entries = &self.rust().entries;
+        let rust = self.rust();
+        let entries = &rust.entries;
+        let hash_uppercase = rust.config.hash_uppercase;
         if let Some(entry) = entries.get(row as usize) {
-            let hash = match algo {
-                0 => entry.hash_value(HashKind::CRC32),
-                1 => entry.hash_value(HashKind::MD5),
-                2 => entry.hash_value(HashKind::SHA1),
-                3 => entry.hash_value(HashKind::SHA256),
-                4 => entry.hash_value(HashKind::SHA512),
+            let kind = match algo {
+                0 => HashKind::CRC32,
+                1 => HashKind::MD5,
+                2 => HashKind::SHA1,
+                3 => HashKind::SHA256,
+                4 => HashKind::SHA512,
                 _ => return,
             };
+            let hash = entry.formatted_hash_value(kind, hash_uppercase);
             if !hash.is_empty() {
-                    set_clipboard(hash);
-                }
+                set_clipboard(&hash);
+            }
         }
     }
 
@@ -695,8 +702,9 @@ impl qobject::AppBackend {
             4 => HashKind::SHA512,
             _ => return,
         };
+        let hash_uppercase = self.rust().config.hash_uppercase;
         let output_path = PathBuf::from(path.to_string());
-        let _ = write_hash_file(&self.rust().entries, &output_path, kind);
+        let _ = write_hash_file(&self.rust().entries, &output_path, kind, hash_uppercase);
     }
 
     fn apply_settings(mut self: Pin<&mut Self>) {
@@ -708,6 +716,7 @@ impl qobject::AppBackend {
             r.config.hash_sha1 = r.setting_sha1;
             r.config.hash_sha256 = r.setting_sha256;
             r.config.hash_sha512 = r.setting_sha512;
+            r.config.hash_uppercase = r.setting_hash_uppercase;
             let _ = r.config.save();
             r.visible_kinds = r.config.enabled_hash_kinds();
         }
@@ -744,6 +753,7 @@ impl qobject::AppBackend {
 
         let ops: Vec<RenameOp> = {
             let r = self.rust();
+            let hash_uppercase = r.config.hash_uppercase;
             (0..r.entries.len()).filter_map(|i| {
                 let entry = &r.entries[i];
                 // Only rename entries that have been hashed and have no error
@@ -763,11 +773,11 @@ impl qobject::AppBackend {
                 let new_name = pattern
                     .replace("%FILENAME%", &stem)
                     .replace("%FILEEXT%", &ext)
-                    .replace("%CRC%", entry.hash_value(HashKind::CRC32))
-                    .replace("%MD5%", entry.hash_value(HashKind::MD5))
-                    .replace("%SHA1%", entry.hash_value(HashKind::SHA1))
-                    .replace("%SHA256%", entry.hash_value(HashKind::SHA256))
-                    .replace("%SHA512%", entry.hash_value(HashKind::SHA512));
+                    .replace("%CRC%", &entry.formatted_hash_value(HashKind::CRC32, hash_uppercase))
+                    .replace("%MD5%", &entry.formatted_hash_value(HashKind::MD5, hash_uppercase))
+                    .replace("%SHA1%", &entry.formatted_hash_value(HashKind::SHA1, hash_uppercase))
+                    .replace("%SHA256%", &entry.formatted_hash_value(HashKind::SHA256, hash_uppercase))
+                    .replace("%SHA512%", &entry.formatted_hash_value(HashKind::SHA512, hash_uppercase));
 
                 let parent = path.parent()?;
                 let new_path = parent.join(&new_name);
@@ -833,6 +843,7 @@ impl qobject::AppBackend {
     fn get_rename_preview(&self) -> QString {
         let r = self.rust();
         let pattern = &r.config.rename_pattern;
+        let hash_uppercase = r.config.hash_uppercase;
 
         for entry in &r.entries {
             if entry.hashes.is_empty() || entry.error.is_some() {
@@ -850,11 +861,11 @@ impl qobject::AppBackend {
             let new_name = pattern
                 .replace("%FILENAME%", &stem)
                 .replace("%FILEEXT%", &ext)
-                .replace("%CRC%", entry.hash_value(HashKind::CRC32))
-                .replace("%MD5%", entry.hash_value(HashKind::MD5))
-                .replace("%SHA1%", entry.hash_value(HashKind::SHA1))
-                .replace("%SHA256%", entry.hash_value(HashKind::SHA256))
-                .replace("%SHA512%", entry.hash_value(HashKind::SHA512));
+                .replace("%CRC%", &entry.formatted_hash_value(HashKind::CRC32, hash_uppercase))
+                .replace("%MD5%", &entry.formatted_hash_value(HashKind::MD5, hash_uppercase))
+                .replace("%SHA1%", &entry.formatted_hash_value(HashKind::SHA1, hash_uppercase))
+                .replace("%SHA256%", &entry.formatted_hash_value(HashKind::SHA256, hash_uppercase))
+                .replace("%SHA512%", &entry.formatted_hash_value(HashKind::SHA512, hash_uppercase));
 
             let old_name = path.file_name()
                 .map(|s| s.to_string_lossy().to_string())
