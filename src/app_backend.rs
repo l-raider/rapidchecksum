@@ -58,6 +58,10 @@ pub mod qobject {
 
         include!("cxx-qt-lib/qbytearray.h");
         type QByteArray = cxx_qt_lib::QByteArray;
+
+        include!("cxx-qt-lib/qt.h");
+        #[namespace = "Qt"]
+        type Orientation = cxx_qt_lib::Orientation;
     }
 
     unsafe extern "RustQt" {
@@ -89,6 +93,14 @@ pub mod qobject {
         #[cxx_override]
         #[cxx_name = "columnCount"]
         fn column_count(self: &AppBackend, parent: &QModelIndex) -> i32;
+        #[cxx_override]
+        #[cxx_name = "headerData"]
+        fn header_data(
+            self: &AppBackend,
+            section: i32,
+            orientation: Orientation,
+            role: i32,
+        ) -> QVariant;
         #[cxx_override]
         #[cxx_name = "roleNames"]
         fn role_names(self: &AppBackend) -> QHash_i32_QByteArray;
@@ -179,7 +191,10 @@ pub mod qobject {
     impl cxx_qt::Threading for AppBackend {}
 }
 
-use cxx_qt_lib::{QByteArray, QHash, QHashPair_i32_QByteArray, QModelIndex, QString, QStringList, QVariant, QVector};
+use cxx_qt_lib::{
+    QByteArray, Orientation, QHash, QHashPair_i32_QByteArray, QModelIndex, QString,
+    QStringList, QVariant, QVector,
+};
 
 pub struct AppBackendRust {
     entries: Vec<FileEntry>,
@@ -289,6 +304,35 @@ impl qobject::AppBackend {
             ROLE_VERIFY_STATUS => QVariant::from(&entry.verify_status()),
             _ => QVariant::default(),
         }
+    }
+
+    fn header_data(&self, section: i32, orientation: Orientation, role: i32) -> QVariant {
+        if role != ROLE_DISPLAY || section < 0 {
+            return QVariant::default();
+        }
+
+        if orientation == Orientation::Vertical {
+            return QVariant::from(&(section + 1));
+        }
+
+        let visible_kinds = &self.rust().visible_kinds;
+        let hash_cols = visible_kinds.len() as i32;
+
+        let label = if section == 0 {
+            Some(QString::from("Filename"))
+        } else if section >= 1 && section <= hash_cols {
+            Some(QString::from(visible_kinds[(section - 1) as usize].name()))
+        } else if section == hash_cols + 1 {
+            Some(QString::from("Verify"))
+        } else if section == hash_cols + 2 {
+            Some(QString::from("Info"))
+        } else {
+            None
+        };
+
+        label
+            .map(|text| QVariant::from(&text))
+            .unwrap_or_default()
     }
 
     fn role_names(&self) -> QHash<QHashPair_i32_QByteArray> {
