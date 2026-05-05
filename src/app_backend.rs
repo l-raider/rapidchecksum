@@ -760,6 +760,7 @@ impl qobject::AppBackend {
                     if let Some(e) = self.as_mut().rust_mut().entries.get_mut(op.index) {
                         e.path = op.new_path;
                         e.filename = op.new_filename;
+                        e.refresh_expected_crc32();
                     }
                     renamed += 1;
                 }

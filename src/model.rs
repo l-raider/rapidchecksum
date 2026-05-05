@@ -35,6 +35,12 @@ impl FileEntry {
         self.hashes.get(&kind).map(|s| s.as_str()).unwrap_or("")
     }
 
+    /// Re-parse the CRC32 tag from the current filename.
+    /// Must be called whenever `filename` is updated (e.g. after a rename).
+    pub fn refresh_expected_crc32(&mut self) {
+        self.expected_crc32 = parse_crc32_from_filename(&self.filename);
+    }
+
     /// Verify status: 0 = no expected hash / not yet computed, 1 = match, 2 = mismatch.
     pub fn verify_status(&self) -> i32 {
         match &self.expected_crc32 {
