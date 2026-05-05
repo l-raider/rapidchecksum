@@ -6,7 +6,7 @@ import com.rapidchecksum.app 1.0
 
 ApplicationWindow {
     id: root
-    title: "RapidChecksum"
+    title: "RapidChecksum " + AppBackend.app_version
     width: 1000
     height: 700
     visible: true

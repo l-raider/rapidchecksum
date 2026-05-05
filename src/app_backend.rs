@@ -77,6 +77,7 @@ pub mod qobject {
         #[qproperty(bool, setting_sha512)]
         #[qproperty(i32, file_count)]
         #[qproperty(QString, setting_rename_pattern)]
+        #[qproperty(QString, app_version)]
         type AppBackend = super::AppBackendRust;
 
         // QAbstractTableModel overrides
@@ -203,6 +204,7 @@ pub struct AppBackendRust {
     setting_sha512: bool,
     file_count: i32,
     setting_rename_pattern: QString,
+    app_version: QString,
 }
 
 impl Default for AppBackendRust {
@@ -230,6 +232,7 @@ impl Default for AppBackendRust {
             status_text: QString::from("Ready"),
             selected_row: -1,
             setting_rename_pattern: QString::from(&rename_pattern),
+            app_version: QString::from(env!("CARGO_PKG_VERSION")),
         }
     }
 }
