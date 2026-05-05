@@ -25,6 +25,7 @@
 #include <QtGui/QClipboard>
 #include <QtGui/QFont>
 #include <QtGui/QFontDatabase>
+#include <QtGui/QFontMetrics>
 #include <QtGui/QIcon>
 #include <QtGui/QKeySequence>
 #include <QtGui/QPalette>
@@ -103,6 +104,75 @@ static int progress_value(float progress)
 {
     auto scaled = static_cast<int>(progress * 1000.0f);
     return std::clamp(scaled, 0, 1000);
+}
+
+static QString representative_hash_text(const QString& column_name)
+{
+    if (column_name == QStringLiteral("CRC32")) {
+        return QStringLiteral("01234567");
+    }
+    if (column_name == QStringLiteral("MD5")) {
+        return QStringLiteral("0123456789abcdef0123456789abcdef");
+    }
+    if (column_name == QStringLiteral("SHA1")) {
+        return QStringLiteral("0123456789abcdef0123456789abcdef01234567");
+    }
+    if (column_name == QStringLiteral("SHA256")) {
+        return QStringLiteral("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef");
+    }
+    if (column_name == QStringLiteral("SHA512")) {
+        return QStringLiteral(
+            "0123456789abcdef0123456789abcdef"
+            "0123456789abcdef0123456789abcdef"
+            "0123456789abcdef0123456789abcdef"
+            "0123456789abcdef0123456789abcdef");
+    }
+
+    return QString();
+}
+
+static int padded_text_width(const QFontMetrics& metrics, const QString& text)
+{
+    return metrics.horizontalAdvance(text) + 18;
+}
+
+static void apply_table_column_width_hints(QTableView* table_view)
+{
+    auto* model = table_view->model();
+    if (!model) {
+        return;
+    }
+
+    const int column_count = model->columnCount(QModelIndex());
+    if (column_count <= 0) {
+        return;
+    }
+
+    const int last_column = column_count - 1;
+    const int verify_column = last_column - 1;
+    const QFont fixed_font = QFontDatabase::systemFont(QFontDatabase::FixedFont);
+    const QFontMetrics fixed_metrics(fixed_font);
+    const QFontMetrics default_metrics(table_view->font());
+
+    for (int column = 1; column < verify_column; ++column) {
+        const QString header = model->headerData(column, Qt::Horizontal, Qt::DisplayRole).toString();
+        int desired_width = padded_text_width(fixed_metrics, header);
+
+        const QString sample = representative_hash_text(header);
+        if (!sample.isEmpty()) {
+            desired_width = std::max(desired_width, padded_text_width(fixed_metrics, sample));
+        }
+
+        table_view->setColumnWidth(column, std::max(table_view->columnWidth(column), desired_width));
+    }
+
+    if (verify_column >= 0) {
+        const QString verify_header = model->headerData(verify_column, Qt::Horizontal, Qt::DisplayRole).toString();
+        const int verify_width = std::max(
+            padded_text_width(default_metrics, verify_header),
+            padded_text_width(default_metrics, QStringLiteral("Mismatch")));
+        table_view->setColumnWidth(verify_column, std::max(table_view->columnWidth(verify_column), verify_width));
+    }
 }
 
 extern "C" {
@@ -197,25 +267,27 @@ extern "C" {
         table_view->verticalHeader()->setVisible(false);
         table_view->verticalHeader()->setDefaultSectionSize(28);
 
-        auto open_files = [backend, window](bool) {
+        auto open_files = [backend, table_view, window](bool) {
             const auto files = QFileDialog::getOpenFileNames(
                 window,
                 QStringLiteral("Select files to hash"));
             if (!files.isEmpty()) {
                 backend->add_files(files);
+                apply_table_column_width_hints(table_view);
             }
         };
 
-        auto open_folder = [backend, window](bool) {
+        auto open_folder = [backend, table_view, window](bool) {
             const auto folder = QFileDialog::getExistingDirectory(
                 window,
                 QStringLiteral("Select folder to add"));
             if (!folder.isEmpty()) {
                 backend->add_folder(folder);
+                apply_table_column_width_hints(table_view);
             }
         };
 
-        auto show_hash_algorithms_dialog = [backend, window](bool) {
+        auto show_hash_algorithms_dialog = [backend, table_view, window](bool) {
             QDialog dialog(window);
             dialog.setWindowTitle(QStringLiteral("Settings - Hash Algorithms"));
             dialog.setModal(true);
@@ -253,6 +325,7 @@ extern "C" {
                 backend->setSetting_sha256(sha256->isChecked());
                 backend->setSetting_sha512(sha512->isChecked());
                 backend->apply_settings();
+                apply_table_column_width_hints(table_view);
             }
         };
 
@@ -558,6 +631,7 @@ extern "C" {
         main_layout->addWidget(table_view, 1);
 
         sync_widget_state();
+        apply_table_column_width_hints(table_view);
 
         window->setWindowTitle(widget_window_title(backend));
         window->resize(1000, 700);
