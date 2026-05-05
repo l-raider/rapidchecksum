@@ -916,9 +916,10 @@ fn collect_files_recursive(dir: &std::path::Path, out: &mut Vec<PathBuf>) {
     entries.sort_by_key(|e| e.file_name());
     for entry in entries {
         let path = entry.path();
-        if path.is_dir() {
+        let Ok(file_type) = entry.file_type() else { continue };
+        if file_type.is_dir() {
             collect_files_recursive(&path, out);
-        } else if path.is_file() {
+        } else if file_type.is_file() || (file_type.is_symlink() && path.is_file()) {
             out.push(path);
         }
     }
@@ -948,4 +949,47 @@ fn strip_crc32_tags(stem: &str) -> String {
         }
     }
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[cfg(unix)]
+    use std::os::unix::fs::symlink;
+
+    fn create_temp_dir(name: &str) -> PathBuf {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!(
+            "rapidchecksum-{name}-{}-{unique}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn collect_files_recursive_skips_symlinked_directories() {
+        let root = create_temp_dir("collect-files-recursive");
+        let nested = root.join("nested");
+        let file_path = nested.join("sample.bin");
+        let loop_link = nested.join("loop");
+
+        fs::create_dir_all(&nested).unwrap();
+        fs::write(&file_path, b"data").unwrap();
+        symlink(&root, &loop_link).unwrap();
+
+        let mut files = Vec::new();
+        collect_files_recursive(&root, &mut files);
+
+        assert_eq!(files, vec![file_path]);
+
+        fs::remove_dir_all(&root).unwrap();
+    }
 }
