@@ -772,8 +772,7 @@ impl qobject::AppBackend {
                 let raw_stem = path.file_stem()
                     .map(|s| s.to_string_lossy().to_string())
                     .unwrap_or_default();
-                // Strip any existing [XXXXXXXX] CRC32 tags so rename is idempotent
-                let stem = strip_crc32_tags(&raw_stem);
+                let stem = prepare_rename_stem(&pattern, &raw_stem);
                 let ext = path.extension()
                     .map(|s| s.to_string_lossy().to_string())
                     .unwrap_or_default();
@@ -854,7 +853,7 @@ impl qobject::AppBackend {
             let raw_stem = path.file_stem()
                 .map(|s| s.to_string_lossy().to_string())
                 .unwrap_or_default();
-            let stem = strip_crc32_tags(&raw_stem);
+            let stem = prepare_rename_stem(pattern, &raw_stem);
             let ext = path.extension()
                 .map(|s| s.to_string_lossy().to_string())
                 .unwrap_or_default();
@@ -958,6 +957,14 @@ fn render_rename_pattern(
         )
 }
 
+fn prepare_rename_stem(pattern: &str, raw_stem: &str) -> String {
+    if pattern.contains("%CRC%") {
+        strip_crc32_tags(raw_stem)
+    } else {
+        raw_stem.to_string()
+    }
+}
+
 fn save_hash_file_status(
     entries: &[FileEntry],
     output_path: &Path,
@@ -1052,6 +1059,19 @@ mod tests {
         let new_name = render_rename_pattern("%FILENAME%.%FILEEXT%", "README", "", &entry, true);
 
         assert_eq!(new_name, "README");
+    }
+
+    #[test]
+    fn default_rename_pattern_preserves_existing_bracketed_hex_segments() {
+        let mut entry = FileEntry::default();
+        entry
+            .hashes
+            .insert(HashKind::CRC32, "CAFEBABE".to_string());
+
+        let stem = prepare_rename_stem("%FILENAME%.%FILEEXT%", "movie [DEADBEEF]");
+        let new_name = render_rename_pattern("%FILENAME%.%FILEEXT%", &stem, "mkv", &entry, true);
+
+        assert_eq!(new_name, "movie [DEADBEEF].mkv");
     }
 
     #[test]
