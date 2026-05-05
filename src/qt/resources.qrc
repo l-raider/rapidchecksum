@@ -1,0 +1,6 @@
+<!DOCTYPE RCC>
+<RCC version="1.0">
+    <qresource prefix="/icons">
+        <file alias="hicolor/256x256/apps/io.github.l_raider.rapidchecksum.png">icons/io.github.l_raider.rapidchecksum.png</file>
+    </qresource>
+</RCC>
