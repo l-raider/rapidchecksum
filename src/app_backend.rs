@@ -592,6 +592,7 @@ impl qobject::AppBackend {
             }
         });
         unsafe { self.as_mut().end_reset_model(); }
+        self.as_mut().set_selected_row(-1);
     }
 
     fn copy_filepath(&self) {
