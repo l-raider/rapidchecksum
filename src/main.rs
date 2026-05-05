@@ -20,11 +20,11 @@ fn main() {
     // Create QApplication (Qt Widgets) so Qt.labs.platform dialogs work natively
     unsafe { qt_app_init() };
 
-    let use_widgets_ui = std::env::var("RAPIDCHECKSUM_UI")
-        .map(|value| value.eq_ignore_ascii_case("widgets"))
+    let use_qml_ui = std::env::var("RAPIDCHECKSUM_UI")
+        .map(|value| value.eq_ignore_ascii_case("qml"))
         .unwrap_or(false);
 
-    if use_widgets_ui {
+    if !use_qml_ui {
         unsafe { qt_show_main_window() };
         unsafe { qt_app_exec() };
         return;
