@@ -770,14 +770,7 @@ impl qobject::AppBackend {
                     .map(|s| s.to_string_lossy().to_string())
                     .unwrap_or_default();
 
-                let new_name = pattern
-                    .replace("%FILENAME%", &stem)
-                    .replace("%FILEEXT%", &ext)
-                    .replace("%CRC%", &entry.formatted_hash_value(HashKind::CRC32, hash_uppercase))
-                    .replace("%MD5%", &entry.formatted_hash_value(HashKind::MD5, hash_uppercase))
-                    .replace("%SHA1%", &entry.formatted_hash_value(HashKind::SHA1, hash_uppercase))
-                    .replace("%SHA256%", &entry.formatted_hash_value(HashKind::SHA256, hash_uppercase))
-                    .replace("%SHA512%", &entry.formatted_hash_value(HashKind::SHA512, hash_uppercase));
+                let new_name = render_rename_pattern(&pattern, &stem, &ext, entry, hash_uppercase);
 
                 let parent = path.parent()?;
                 let new_path = parent.join(&new_name);
@@ -858,14 +851,7 @@ impl qobject::AppBackend {
                 .map(|s| s.to_string_lossy().to_string())
                 .unwrap_or_default();
 
-            let new_name = pattern
-                .replace("%FILENAME%", &stem)
-                .replace("%FILEEXT%", &ext)
-                .replace("%CRC%", &entry.formatted_hash_value(HashKind::CRC32, hash_uppercase))
-                .replace("%MD5%", &entry.formatted_hash_value(HashKind::MD5, hash_uppercase))
-                .replace("%SHA1%", &entry.formatted_hash_value(HashKind::SHA1, hash_uppercase))
-                .replace("%SHA256%", &entry.formatted_hash_value(HashKind::SHA256, hash_uppercase))
-                .replace("%SHA512%", &entry.formatted_hash_value(HashKind::SHA512, hash_uppercase));
+            let new_name = render_rename_pattern(pattern, &stem, &ext, entry, hash_uppercase);
 
             let old_name = path.file_name()
                 .map(|s| s.to_string_lossy().to_string())
@@ -923,6 +909,45 @@ fn collect_files_recursive(dir: &std::path::Path, out: &mut Vec<PathBuf>) {
             out.push(path);
         }
     }
+}
+
+fn render_rename_pattern(
+    pattern: &str,
+    stem: &str,
+    ext: &str,
+    entry: &FileEntry,
+    hash_uppercase: bool,
+) -> String {
+    let ext_with_dot = if ext.is_empty() {
+        String::new()
+    } else {
+        format!(".{ext}")
+    };
+
+    pattern
+        .replace("%FILENAME%", stem)
+        .replace(".%FILEEXT%", &ext_with_dot)
+        .replace("%FILEEXT%", ext)
+        .replace(
+            "%CRC%",
+            &entry.formatted_hash_value(HashKind::CRC32, hash_uppercase),
+        )
+        .replace(
+            "%MD5%",
+            &entry.formatted_hash_value(HashKind::MD5, hash_uppercase),
+        )
+        .replace(
+            "%SHA1%",
+            &entry.formatted_hash_value(HashKind::SHA1, hash_uppercase),
+        )
+        .replace(
+            "%SHA256%",
+            &entry.formatted_hash_value(HashKind::SHA256, hash_uppercase),
+        )
+        .replace(
+            "%SHA512%",
+            &entry.formatted_hash_value(HashKind::SHA512, hash_uppercase),
+        )
 }
 
 /// Remove all `[XXXXXXXX]` (8 hex digit) CRC32 tags from a filename stem.
@@ -991,5 +1016,17 @@ mod tests {
         assert_eq!(files, vec![file_path]);
 
         fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn render_rename_pattern_skips_separator_for_extensionless_files() {
+        let mut entry = FileEntry::default();
+        entry
+            .hashes
+            .insert(HashKind::CRC32, "DEADBEEF".to_string());
+
+        let new_name = render_rename_pattern("%FILENAME%.%FILEEXT%", "README", "", &entry, true);
+
+        assert_eq!(new_name, "README");
     }
 }
