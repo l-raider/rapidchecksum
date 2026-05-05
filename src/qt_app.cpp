@@ -618,6 +618,8 @@ extern "C" {
                                   open_files_action,
                                   open_folder_action,
                                   remove_selected_action,
+                                  hash_algorithms_action,
+                                  hash_casing_menu,
                                   file_progress,
                                   global_progress,
                                   status_label]() {
@@ -635,6 +637,8 @@ extern "C" {
             open_files_action->setEnabled(!is_hashing);
             open_folder_action->setEnabled(!is_hashing);
             remove_selected_action->setEnabled(!is_hashing && has_selection);
+            hash_algorithms_action->setEnabled(!is_hashing);
+            hash_casing_menu->setEnabled(!is_hashing);
 
             file_progress->setVisible(is_hashing);
             global_progress->setVisible(is_hashing);

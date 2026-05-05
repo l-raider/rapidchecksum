@@ -716,6 +716,13 @@ impl qobject::AppBackend {
     }
 
     fn apply_settings(mut self: Pin<&mut Self>) {
+        if self.rust().is_hashing {
+            self.as_mut().set_status_text(QString::from(
+                "Wait for hashing to finish before changing hash settings",
+            ));
+            return;
+        }
+
         unsafe { self.as_mut().begin_reset_model(); }
         {
             let mut r = self.as_mut().rust_mut();
