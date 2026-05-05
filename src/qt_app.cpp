@@ -414,7 +414,7 @@ extern "C" {
             QDialog dialog(window);
             dialog.setWindowTitle(QStringLiteral("Rename Files"));
             dialog.setModal(true);
-            dialog.resize(460, dialog.sizeHint().height());
+            dialog.setMinimumWidth(460);
 
             auto* layout = new QVBoxLayout(&dialog);
             auto* description = new QLabel(
@@ -444,6 +444,8 @@ extern "C" {
             layout->addWidget(preview_label);
             layout->addWidget(confirm_checkbox);
             layout->addWidget(buttons);
+
+            dialog.adjustSize();
 
             QObject::connect(confirm_checkbox, &QCheckBox::toggled, rename_confirm_button, &QPushButton::setEnabled);
             QObject::connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
