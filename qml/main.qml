@@ -418,13 +418,13 @@ ApplicationWindow {
                 applyColumnWidths()
             }
 
-            // Apply stored fractional weights to the current table width
+            // Clear any explicit column widths and force a layout pass so that
+            // columnWidthProvider is re-evaluated with the current tableView.width.
             function applyColumnWidths() {
                 if (colWeights.length === 0 || tableView.width <= 0) return
                 updatingWidths = true
-                var w = tableView.width
-                for (var i = 0; i < colWeights.length; i++)
-                    tableView.setColumnWidth(i, Math.max(40, w * colWeights[i]))
+                tableView.clearColumnWidths()
+                tableView.forceLayout()
                 updatingWidths = false
             }
 
@@ -527,6 +527,11 @@ ApplicationWindow {
                     clip: true
                     ScrollBar.vertical: ScrollBar {}
                     ScrollBar.horizontal: ScrollBar {}
+
+                    columnWidthProvider: function(column) {
+                        if (fileListItem.colWeights.length <= column || width <= 0) return 100
+                        return Math.max(40, width * fileListItem.colWeights[column])
+                    }
 
                     onWidthChanged: Qt.callLater(fileListItem.applyColumnWidths)
                     onColumnsChanged: Qt.callLater(fileListItem.initColumnWeights)
