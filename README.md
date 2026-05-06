@@ -44,30 +44,24 @@ Then restart Dolphin. Right-clicking any file will show a **RapidChecksum** entr
 ### Slow file loading when selecting many files from Dolphin
 
 When right-clicking a large number of files (25+) in Dolphin and choosing RapidChecksum,
-there is a noticeable delay before the app opens. This is caused by two separate issues:
+there is a noticeable delay before the app opens.
 
-**1. KDE Activity Manager (primary bottleneck — [KDE Bug #440766](https://bugs.kde.org/show_bug.cgi?id=440766))**
+**KDE Activity Manager (primary bottleneck — [KDE Bug #440766](https://bugs.kde.org/show_bug.cgi?id=440766))**
 
 Before Dolphin launches any service menu action, it records every selected file in the
 recent documents history via `kactivitymanagerd`. This is done one file at a time,
-synchronously, before your action even starts. On KDE Frameworks 6 this is ~3× slower
-than KF5. With 500 files the delay can be 10–30+ seconds.
+synchronously, before your action even starts. On KDE 6 this is ~3× slower
+than KDE 5. With 500 files the delay can be 10–30+ seconds.
 
 This is a KDE bug and is not fixable from RapidChecksum's side. To work around it,
 disable recent document tracking in KDE System Settings:
 
-> **System Settings → Workspace → Recent Files → uncheck "Keep history of opened documents"**
+> **System Settings → Recent Files → Change the "Remember opened documents" setting to "Only for specific applications" and remove RapidChecksum from the list.**
 
 Alternatively, stop the service for the current session:
 ```sh
 systemctl --user stop plasma-kactivitymanagerd.service
 ```
-
-**2. Flatpak document portal overhead (secondary)**
-
-This has been fixed in the RapidChecksum service menu: the app uses direct file paths
-instead of portal file forwarding, since the flatpak already has `--filesystem=home`
-access.
 
 ## Architecture
 
