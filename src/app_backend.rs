@@ -612,7 +612,7 @@ impl qobject::AppBackend {
 
     fn cancel_hashing(mut self: Pin<&mut Self>) {
         if let Some(ref flag) = self.rust().cancel_flag {
-            flag.store(true, Ordering::SeqCst);
+            flag.store(true, Ordering::Relaxed);
         }
         self.as_mut().rust_mut().cancel_flag = None;
         self.as_mut().set_is_hashing(false);
