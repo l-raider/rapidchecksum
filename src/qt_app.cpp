@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <functional>
 #include <memory>
 #include <vector>
 
@@ -310,6 +311,21 @@ extern "C" {
         table_view->horizontalHeader()->setSortIndicator(-1, Qt::AscendingOrder);
         table_view->verticalHeader()->setVisible(false);
         table_view->verticalHeader()->setDefaultSectionSize(28);
+        auto* selection_model = table_view->selectionModel();
+        std::function<void()> sync_action_state;
+
+        auto sync_progress_state = [backend,
+                                    file_progress,
+                                    global_progress,
+                                    status_label]() {
+            const bool is_hashing = backend->getIs_hashing();
+
+            file_progress->setVisible(is_hashing);
+            global_progress->setVisible(is_hashing);
+            file_progress->setValue(progress_value(backend->getFile_progress()));
+            global_progress->setValue(progress_value(backend->getGlobal_progress()));
+            status_label->setText(backend->getStatus_text());
+        };
 
         auto open_files = [backend, table_view, window](bool) {
             const auto files = QFileDialog::getOpenFileNames(
@@ -418,7 +434,7 @@ extern "C" {
             }
         };
 
-        auto show_file_renaming_dialog = [backend, window, fixed_font](bool) {
+        auto show_file_renaming_dialog = [backend, window, fixed_font, &sync_action_state](bool) {
             QDialog dialog(window);
             dialog.setWindowTitle(QStringLiteral("Settings - File Renaming"));
             dialog.setModal(true);
@@ -485,6 +501,7 @@ extern "C" {
             if (dialog.exec() == QDialog::Accepted) {
                 backend->setSetting_rename_pattern(pattern_edit->text());
                 backend->apply_rename_settings();
+                sync_action_state();
             }
         };
 
@@ -494,7 +511,17 @@ extern "C" {
             apply_table_column_width_hints(table_view);
         };
 
-        auto confirm_rename_files = [backend, window](bool) {
+        auto confirm_rename_files = [backend, window, &sync_action_state](bool) {
+            const QString preview = backend->get_rename_preview();
+            if (preview.isEmpty()) {
+                QMessageBox::information(
+                    window,
+                    QStringLiteral("Rename Files"),
+                    QStringLiteral("No hashed files are currently eligible to be renamed."));
+                sync_action_state();
+                return;
+            }
+
             QDialog dialog(window);
             dialog.setWindowTitle(QStringLiteral("Rename Files"));
             dialog.setModal(true);
@@ -505,7 +532,7 @@ extern "C" {
                 QStringLiteral("This will permanently rename all hashed files on disk according to the current rename pattern."),
                 &dialog);
             auto* preview_title = new QLabel(QStringLiteral("Preview (first file):"), &dialog);
-            auto* preview_label = new QLabel(backend->get_rename_preview(), &dialog);
+            auto* preview_label = new QLabel(preview, &dialog);
             auto* confirm_checkbox = new QCheckBox(
                 QStringLiteral("I confirm I want to rename these files"),
                 &dialog);
@@ -537,6 +564,7 @@ extern "C" {
 
             if (dialog.exec() == QDialog::Accepted) {
                 backend->rename_files();
+                sync_action_state();
             }
         };
 
@@ -572,23 +600,27 @@ extern "C" {
             table_view,
             &QTableView::customContextMenuRequested,
             table_view,
-            [table_view, backend, populate_save_hash_menu](const QPoint& pos) {
+            [table_view, backend, selection_model, populate_save_hash_menu](const QPoint& pos) {
                 const QModelIndex index = table_view->indexAt(pos);
                 if (!index.isValid()) {
                     return;
                 }
 
-                if (!table_view->selectionModel()->isSelected(index)) {
-                    table_view->selectionModel()->setCurrentIndex(
+                if (!selection_model->isSelected(index)) {
+                    selection_model->setCurrentIndex(
                         index,
                         QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
                 } else {
-                    backend->select_row(index.row());
+                    selection_model->setCurrentIndex(index, QItemSelectionModel::NoUpdate);
                 }
 
                 QMenu menu(table_view);
                 auto* copy_file_path_action = menu.addAction(QStringLiteral("Copy File Path"));
-                QObject::connect(copy_file_path_action, &QAction::triggered, &menu, [backend]() {
+                QObject::connect(copy_file_path_action, &QAction::triggered, &menu, [table_view]() {
+                    auto* backend = qobject_cast<AppBackend*>(table_view->model());
+                    if (!backend) {
+                        return;
+                    }
                     backend->copy_filepath();
                 });
 
@@ -601,13 +633,21 @@ extern "C" {
                     }
 
                     auto* action = copy_hash_menu->addAction(backend->hash_algorithm_name(algorithm_id));
-                    QObject::connect(action, &QAction::triggered, &menu, [backend, algorithm_id]() {
+                    QObject::connect(action, &QAction::triggered, &menu, [table_view, algorithm_id]() {
+                        auto* backend = qobject_cast<AppBackend*>(table_view->model());
+                        if (!backend) {
+                            return;
+                        }
                         backend->copy_hash(algorithm_id);
                     });
                 }
 
                 auto* open_folder_action_menu = menu.addAction(QStringLiteral("Open Containing Folder"));
-                QObject::connect(open_folder_action_menu, &QAction::triggered, &menu, [backend]() {
+                QObject::connect(open_folder_action_menu, &QAction::triggered, &menu, [table_view]() {
+                    auto* backend = qobject_cast<AppBackend*>(table_view->model());
+                    if (!backend) {
+                        return;
+                    }
                     backend->open_folder();
                 });
 
@@ -674,29 +714,28 @@ extern "C" {
         settings_menu->addMenu(hash_casing_menu);
         settings_menu->addAction(file_renaming_action);
 
-        auto sync_widget_state = [backend,
-                                  open_files_button,
-                                  open_hash_file_button,
-                                  open_folder_button,
-                                  start_button,
-                                  cancel_button,
-                                  clear_button,
-                                  remove_button,
-                                  rename_button,
-                                  open_files_action,
-                                  open_hash_file_action,
-                                  open_folder_action,
-                                  save_hash_menu_bar,
-                                  remove_selected_action,
-                                  hash_algorithms_action,
-                                  hash_casing_menu,
-                                  file_renaming_action,
-                                  file_progress,
-                                  global_progress,
-                                  status_label]() {
+        sync_action_state = [backend,
+                             selection_model,
+                             open_files_button,
+                             open_hash_file_button,
+                             open_folder_button,
+                             start_button,
+                             cancel_button,
+                             clear_button,
+                             remove_button,
+                             rename_button,
+                             open_files_action,
+                             open_hash_file_action,
+                             open_folder_action,
+                             save_hash_menu_bar,
+                             remove_selected_action,
+                             hash_algorithms_action,
+                             hash_casing_menu,
+                             file_renaming_action]() {
             const bool is_hashing = backend->getIs_hashing();
             const bool has_files = backend->getFile_count() > 0;
-            const bool has_selection = backend->getSelected_row() >= 0;
+            const bool has_selected_rows = selection_model && !selection_model->selectedRows().isEmpty();
+            const bool has_rename_candidates = has_files && !backend->get_rename_preview().isEmpty();
 
             open_files_button->setEnabled(!is_hashing);
             open_hash_file_button->setEnabled(!is_hashing);
@@ -704,30 +743,32 @@ extern "C" {
             start_button->setEnabled(!is_hashing && has_files);
             cancel_button->setEnabled(is_hashing);
             clear_button->setEnabled(!is_hashing && has_files);
-            remove_button->setEnabled(!is_hashing && has_selection);
-            rename_button->setEnabled(!is_hashing && has_files);
+            remove_button->setEnabled(!is_hashing && has_selected_rows);
+            rename_button->setEnabled(!is_hashing && has_rename_candidates);
             open_files_action->setEnabled(!is_hashing);
             open_hash_file_action->setEnabled(!is_hashing);
             open_folder_action->setEnabled(!is_hashing);
             save_hash_menu_bar->setEnabled(!is_hashing && has_files);
-            remove_selected_action->setEnabled(!is_hashing && has_selection);
+            remove_selected_action->setEnabled(!is_hashing && has_selected_rows);
             hash_algorithms_action->setEnabled(!is_hashing);
             hash_casing_menu->setEnabled(!is_hashing);
             file_renaming_action->setEnabled(!is_hashing);
-
-            file_progress->setVisible(is_hashing);
-            global_progress->setVisible(is_hashing);
-            file_progress->setValue(progress_value(backend->getFile_progress()));
-            global_progress->setValue(progress_value(backend->getGlobal_progress()));
-            status_label->setText(backend->getStatus_text());
         };
 
-        QObject::connect(backend, &AppBackend::is_hashingChanged, central_widget, sync_widget_state);
-        QObject::connect(backend, &AppBackend::file_countChanged, central_widget, sync_widget_state);
-        QObject::connect(backend, &AppBackend::selected_rowChanged, central_widget, sync_widget_state);
-        QObject::connect(backend, &AppBackend::file_progressChanged, central_widget, sync_widget_state);
-        QObject::connect(backend, &AppBackend::global_progressChanged, central_widget, sync_widget_state);
-        QObject::connect(backend, &AppBackend::status_textChanged, central_widget, sync_widget_state);
+        QObject::connect(backend, &AppBackend::is_hashingChanged, central_widget, sync_action_state);
+        QObject::connect(backend, &AppBackend::file_countChanged, central_widget, sync_action_state);
+        QObject::connect(selection_model, &QItemSelectionModel::selectionChanged, central_widget, [sync_action_state](const auto&, const auto&) {
+            sync_action_state();
+        });
+        QObject::connect(backend, &QAbstractItemModel::dataChanged, central_widget, [sync_action_state](const auto&, const auto&, const auto&) {
+            sync_action_state();
+        });
+        QObject::connect(backend, &QAbstractItemModel::modelReset, central_widget, sync_action_state);
+
+        QObject::connect(backend, &AppBackend::is_hashingChanged, central_widget, sync_progress_state);
+        QObject::connect(backend, &AppBackend::file_progressChanged, central_widget, sync_progress_state);
+        QObject::connect(backend, &AppBackend::global_progressChanged, central_widget, sync_progress_state);
+        QObject::connect(backend, &AppBackend::status_textChanged, central_widget, sync_progress_state);
 
         main_layout->addLayout(toolbar_layout);
         main_layout->addWidget(file_progress);
@@ -735,7 +776,8 @@ extern "C" {
         main_layout->addWidget(status_label);
         main_layout->addWidget(table_view, 1);
 
-        sync_widget_state();
+        sync_action_state();
+        sync_progress_state();
         apply_table_column_width_hints(table_view);
 
     s_backend = backend;
