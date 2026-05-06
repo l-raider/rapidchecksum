@@ -215,6 +215,9 @@ pub struct AppBackendRust {
     cancel_flag: Option<Arc<AtomicBool>>,
     files_completed: usize,
     total_files: usize,
+    file_byte_totals: Vec<u64>,
+    bytes_completed: u64,
+    total_bytes_all: u64,
     start_time: Option<Instant>,
     hash_generation: u64,
 
@@ -240,6 +243,9 @@ impl Default for AppBackendRust {
             cancel_flag: None,
             files_completed: 0,
             total_files: 0,
+            file_byte_totals: Vec::new(),
+            bytes_completed: 0,
+            total_bytes_all: 0,
             start_time: None,
             setting_hash_uppercase: config.hash_uppercase,
             config,
@@ -490,12 +496,21 @@ impl qobject::AppBackend {
         let cancel = Arc::new(AtomicBool::new(false));
         let (tx, rx) = mpsc::channel::<WorkerMessage>();
 
+        let file_byte_totals: Vec<u64> = tasks
+            .iter()
+            .map(|t| std::fs::metadata(&t.path).map(|m| m.len()).unwrap_or(0))
+            .collect();
+        let total_bytes_all: u64 = file_byte_totals.iter().sum();
+
         let total = tasks.len();
         self.as_mut().rust_mut().hash_generation += 1;
         let generation = self.rust().hash_generation;
         self.as_mut().rust_mut().cancel_flag = Some(cancel.clone());
         self.as_mut().rust_mut().files_completed = 0;
         self.as_mut().rust_mut().total_files = total;
+        self.as_mut().rust_mut().file_byte_totals = file_byte_totals;
+        self.as_mut().rust_mut().bytes_completed = 0;
+        self.as_mut().rust_mut().total_bytes_all = total_bytes_all;
         self.as_mut().rust_mut().start_time = Some(Instant::now());
         self.as_mut().set_is_hashing(true);
         self.as_mut().set_file_progress(0.0);
@@ -546,11 +561,18 @@ impl qobject::AppBackend {
                 };
                 self.as_mut().set_file_progress(progress);
 
-                let completed = self.rust().files_completed;
-                let total = self.rust().total_files;
-                if total > 0 {
-                    let gp = (completed as f32 + progress) / total as f32;
-                    self.as_mut().set_global_progress(gp);
+                let total_bytes_all = self.rust().total_bytes_all;
+                let bytes_completed = self.rust().bytes_completed;
+                if total_bytes_all > 0 {
+                    let gp = (bytes_completed as f64 + bytes_read as f64) / total_bytes_all as f64;
+                    self.as_mut().set_global_progress(gp as f32);
+                } else {
+                    let completed = self.rust().files_completed;
+                    let total = self.rust().total_files;
+                    if total > 0 {
+                        let gp = (completed as f32 + progress) / total as f32;
+                        self.as_mut().set_global_progress(gp);
+                    }
                 }
 
                 let text = format!(
@@ -570,10 +592,18 @@ impl qobject::AppBackend {
                     entry.info = info;
                     entry.error = None;
                 }
-                self.as_mut().rust_mut().files_completed += 1;
+                {
+                    let mut r = self.as_mut().rust_mut();
+                    r.files_completed += 1;
+                    r.bytes_completed += r.file_byte_totals.get(file_index).copied().unwrap_or(0);
+                }
                 let completed = self.rust().files_completed;
                 let total = self.rust().total_files;
-                if total > 0 {
+                let total_bytes_all = self.rust().total_bytes_all;
+                let bytes_completed = self.rust().bytes_completed;
+                if total_bytes_all > 0 {
+                    self.as_mut().set_global_progress(bytes_completed as f32 / total_bytes_all as f32);
+                } else if total > 0 {
                     self.as_mut().set_global_progress(completed as f32 / total as f32);
                 }
                 self.as_mut().set_file_progress(1.0);
@@ -590,10 +620,18 @@ impl qobject::AppBackend {
                     entry.hashes.clear();
                     entry.info = String::new();
                 }
-                self.as_mut().rust_mut().files_completed += 1;
+                {
+                    let mut r = self.as_mut().rust_mut();
+                    r.files_completed += 1;
+                    r.bytes_completed += r.file_byte_totals.get(file_index).copied().unwrap_or(0);
+                }
                 let completed = self.rust().files_completed;
                 let total = self.rust().total_files;
-                if total > 0 {
+                let total_bytes_all = self.rust().total_bytes_all;
+                let bytes_completed = self.rust().bytes_completed;
+                if total_bytes_all > 0 {
+                    self.as_mut().set_global_progress(bytes_completed as f32 / total_bytes_all as f32);
+                } else if total > 0 {
                     self.as_mut().set_global_progress(completed as f32 / total as f32);
                 }
                 self.as_mut().set_file_progress(1.0);
