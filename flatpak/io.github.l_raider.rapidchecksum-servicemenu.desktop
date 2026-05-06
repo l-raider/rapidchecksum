@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Service
+MimeType=application/octet-stream;
+Actions=rapidchecksum;
+X-KDE-Priority=TopLevel
+X-KDE-Protocols=file
+
+[Desktop Action rapidchecksum]
+Name=RapidChecksum
+Icon=io.github.l_raider.rapidchecksum
+Exec=flatpak run --file-forwarding io.github.l_raider.rapidchecksum @@ %F @@

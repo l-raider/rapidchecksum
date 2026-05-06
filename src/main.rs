@@ -14,25 +14,29 @@ extern "C" {
     fn qt_app_exec() -> i32;
     fn qt_queue_startup_sfv(path: *const std::ffi::c_char);
     fn qt_process_startup_sfv();
+    fn qt_queue_startup_add(path: *const std::ffi::c_char);
+    fn qt_process_startup_add();
 }
 
 fn main() {
-    let startup_sfv_paths: Vec<_> = std::env::args_os()
-        .skip(1)
-        .filter_map(|arg| {
-            let path = std::path::PathBuf::from(arg);
-            let is_sfv = path
-                .extension()
-                .and_then(|ext| ext.to_str())
-                .map(|ext| ext.eq_ignore_ascii_case("sfv"))
-                .unwrap_or(false);
-            if !is_sfv {
-                return None;
-            }
+    let mut startup_sfv_paths: Vec<std::ffi::CString> = Vec::new();
+    let mut startup_add_paths: Vec<std::ffi::CString> = Vec::new();
 
-            std::ffi::CString::new(path.to_string_lossy().into_owned()).ok()
-        })
-        .collect();
+    for arg in std::env::args_os().skip(1) {
+        let path = std::path::PathBuf::from(&arg);
+        let is_sfv = path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .map(|ext| ext.eq_ignore_ascii_case("sfv"))
+            .unwrap_or(false);
+        if let Ok(cstr) = std::ffi::CString::new(path.to_string_lossy().into_owned()) {
+            if is_sfv {
+                startup_sfv_paths.push(cstr);
+            } else {
+                startup_add_paths.push(cstr);
+            }
+        }
+    }
 
     // Create QApplication (Qt Widgets) so Qt.labs.platform dialogs work natively
     unsafe { qt_app_init() };
@@ -43,6 +47,11 @@ fn main() {
         unsafe { qt_queue_startup_sfv(path.as_ptr()) };
     }
     unsafe { qt_process_startup_sfv() };
+
+    for path in &startup_add_paths {
+        unsafe { qt_queue_startup_add(path.as_ptr()) };
+    }
+    unsafe { qt_process_startup_add() };
 
         std::process::exit(unsafe { qt_app_exec() });
 }

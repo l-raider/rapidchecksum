@@ -34,6 +34,8 @@ modules:
       - install -Dm644 flatpak/io.github.l_raider.rapidchecksum.desktop /app/share/applications/io.github.l_raider.rapidchecksum.desktop
       - install -Dm644 flatpak/io.github.l_raider.rapidchecksum-mime.xml /app/share/mime/packages/io.github.l_raider.rapidchecksum-mime.xml
       - install -Dm644 flatpak/io.github.l_raider.rapidchecksum.metainfo.xml /app/share/metainfo/io.github.l_raider.rapidchecksum.metainfo.xml
+      - install -Dm644 flatpak/io.github.l_raider.rapidchecksum-servicemenu.desktop /app/share/kio/servicemenus/io.github.l_raider.rapidchecksum-servicemenu.desktop
+      - install -Dm755 flatpak/install-dolphin-servicemenu.sh /app/bin/install-dolphin-servicemenu
       - install -Dm644 flatpak/icons/hicolor/scalable/apps/io.github.l_raider.rapidchecksum.svg /app/share/icons/hicolor/scalable/apps/io.github.l_raider.rapidchecksum.svg
       - for size in 16 32 48 64 128 256 512; do
           install -Dm644

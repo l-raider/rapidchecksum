@@ -29,6 +29,16 @@ The binary is written to `target/release/rapidchecksum`.
 ./build-flatpak.sh
 ```
 
+### KDE Dolphin context menu integration
+
+After installing the flatpak, run the following command once to add a **RapidChecksum** entry to Dolphin's right-click context menu:
+
+```sh
+flatpak run --command=install-dolphin-servicemenu io.github.l_raider.rapidchecksum
+```
+
+Then restart Dolphin. Right-clicking any file will show a **RapidChecksum** entry that opens the selected files in the app without auto-starting hashing.
+
 ## Architecture
 
 | Layer | Tech |

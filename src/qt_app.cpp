@@ -47,6 +47,7 @@ static QMainWindow*  s_main_window = nullptr;
 static AppBackend*   s_backend = nullptr;
 static QTableView*   s_results_table = nullptr;
 static std::vector<QString> s_startup_sfv_paths;
+static std::vector<QString> s_startup_add_paths;
 
 namespace {
 
@@ -817,6 +818,34 @@ extern "C" {
             }
         }
         s_startup_sfv_paths.clear();
+
+        if (s_results_table) {
+            apply_table_column_width_hints(s_results_table);
+        }
+    }
+
+    void qt_queue_startup_add(const char* path)
+    {
+        if (!path) {
+            return;
+        }
+
+        s_startup_add_paths.push_back(QString::fromUtf8(path));
+    }
+
+    void qt_process_startup_add()
+    {
+        if (!s_backend || s_startup_add_paths.empty()) {
+            return;
+        }
+
+        QStringList paths;
+        paths.reserve(static_cast<qsizetype>(s_startup_add_paths.size()));
+        for (const auto& path : s_startup_add_paths) {
+            paths.append(path);
+        }
+        s_backend->add_files(paths);
+        s_startup_add_paths.clear();
 
         if (s_results_table) {
             apply_table_column_width_hints(s_results_table);
