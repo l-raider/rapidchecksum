@@ -464,7 +464,7 @@ impl qobject::AppBackend {
         if self.rust().is_hashing {
             return;
         }
-        let kinds = self.rust().visible_kinds.clone();
+        let kinds = hashing_kinds_for_run(&self.rust().visible_kinds, &self.rust().entries);
         if kinds.is_empty() {
             self.as_mut()
                 .set_status_text(QString::from("No hash algorithms selected"));
@@ -1074,6 +1074,19 @@ fn save_hash_file_status(
     }
 }
 
+fn hashing_kinds_for_run(visible_kinds: &[HashKind], entries: &[FileEntry]) -> Vec<HashKind> {
+    let mut kinds = visible_kinds.to_vec();
+    let needs_crc32_verification = entries
+        .iter()
+        .any(|entry| entry.expected_crc32.is_some());
+
+    if needs_crc32_verification && !kinds.contains(&HashKind::CRC32) {
+        kinds.push(HashKind::CRC32);
+    }
+
+    kinds
+}
+
 #[derive(Debug, Default, PartialEq, Eq)]
 struct SfvLoadSummary {
     imported_count: usize,
@@ -1403,6 +1416,26 @@ mod tests {
         assert_eq!(entries[1].error.as_deref(), Some("File not found"));
 
         fs::remove_dir_all(&temp_dir).unwrap();
+    }
+
+    #[test]
+    fn hashing_kinds_for_run_includes_crc32_for_sfv_verification() {
+        let mut entry = FileEntry::default();
+        entry.set_expected_crc32("deadbeef");
+
+        let kinds = hashing_kinds_for_run(&[HashKind::SHA256], &[entry]);
+
+        assert_eq!(kinds, vec![HashKind::SHA256, HashKind::CRC32]);
+    }
+
+    #[test]
+    fn hashing_kinds_for_run_uses_crc32_when_it_is_the_only_needed_hash() {
+        let mut entry = FileEntry::default();
+        entry.set_expected_crc32("deadbeef");
+
+        let kinds = hashing_kinds_for_run(&[], &[entry]);
+
+        assert_eq!(kinds, vec![HashKind::CRC32]);
     }
 
     #[test]
