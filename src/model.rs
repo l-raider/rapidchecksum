@@ -44,6 +44,10 @@ impl FileEntry {
         }
     }
 
+    pub fn set_expected_crc32(&mut self, expected_crc32: &str) {
+        self.expected_crc32 = Some(expected_crc32.to_ascii_uppercase());
+    }
+
     /// Re-parse the CRC32 tag from the current filename.
     /// Must be called whenever `filename` is updated (e.g. after a rename).
     pub fn refresh_expected_crc32(&mut self) {
@@ -103,5 +107,14 @@ mod tests {
             parse_crc32_from_filename("movie [DEADBEEF] [CAFEBABE].mkv"),
             Some("CAFEBABE".to_string())
         );
+    }
+
+    #[test]
+    fn set_expected_crc32_normalizes_case() {
+        let mut entry = FileEntry::default();
+
+        entry.set_expected_crc32("deadbeef");
+
+        assert_eq!(entry.expected_crc32.as_deref(), Some("DEADBEEF"));
     }
 }

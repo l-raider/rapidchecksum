@@ -9,7 +9,7 @@ use std::time::Instant;
 use cxx_qt::{CxxQtType, Threading};
 
 use crate::config::AppConfig;
-use crate::fileio::write_hash_file;
+use crate::fileio::{read_sfv_file, write_hash_file};
 use crate::hasher::HashKind;
 use crate::model::FileEntry;
 use crate::worker::{spawn_hash_worker, FileTask, WorkerMessage};
@@ -150,6 +150,8 @@ pub mod qobject {
         fn add_files(self: Pin<&mut AppBackend>, paths: &QStringList);
         #[qinvokable]
         fn add_folder(self: Pin<&mut AppBackend>, folder_path: &QString);
+        #[qinvokable]
+        fn load_hash_file(self: Pin<&mut AppBackend>, path: &QString);
         #[qinvokable]
         fn start_hashing(self: Pin<&mut AppBackend>);
         #[qinvokable]
@@ -421,6 +423,41 @@ impl qobject::AppBackend {
         self.as_mut().set_file_count(count as i32);
         let text = format!("{} file(s) loaded", count);
         self.as_mut().set_status_text(QString::from(&text));
+    }
+
+    fn load_hash_file(mut self: Pin<&mut Self>, path: &QString) {
+        if self.rust().is_hashing {
+            self.as_mut().set_status_text(QString::from(
+                "Wait for hashing to finish before loading an SFV file",
+            ));
+            return;
+        }
+
+        let manifest_path = PathBuf::from(path.to_string());
+        let loaded_entries = match load_sfv_entries(&manifest_path) {
+            Ok(entries) => entries,
+            Err(err) => {
+                self.as_mut().set_status_text(QString::from(&err));
+                return;
+            }
+        };
+
+        unsafe {
+            self.as_mut().begin_reset_model();
+        }
+        let summary = {
+            let mut rust = self.as_mut().rust_mut();
+            merge_sfv_entries(&mut rust.entries, loaded_entries)
+        };
+        unsafe {
+            self.as_mut().end_reset_model();
+        }
+
+        let count = self.rust().entries.len() as i32;
+        self.as_mut().set_file_count(count);
+        self.as_mut().set_selected_row(-1);
+        self.as_mut()
+            .set_status_text(QString::from(&format_loaded_sfv_status(&manifest_path, &summary)));
     }
 
     fn start_hashing(mut self: Pin<&mut Self>) {
@@ -1037,6 +1074,95 @@ fn save_hash_file_status(
     }
 }
 
+#[derive(Debug, Default, PartialEq, Eq)]
+struct SfvLoadSummary {
+    imported_count: usize,
+    added_count: usize,
+    updated_count: usize,
+    missing_count: usize,
+}
+
+fn load_sfv_entries(manifest_path: &Path) -> Result<Vec<FileEntry>, String> {
+    let records = read_sfv_file(manifest_path)
+        .map_err(|err| format!("Failed to load SFV file: {err}"))?;
+    let manifest_dir = manifest_path.parent().unwrap_or_else(|| Path::new(""));
+
+    let mut entries = Vec::with_capacity(records.len());
+    for record in records {
+        let resolved_path = manifest_dir.join(&record.filename);
+        let mut entry = FileEntry::new(resolved_path.clone());
+        entry.filename = record.filename;
+        entry.set_expected_crc32(&record.crc32);
+        if !resolved_path.is_file() {
+            entry.error = Some("File not found".to_string());
+        }
+        entries.push(entry);
+    }
+
+    Ok(entries)
+}
+
+fn merge_sfv_entries(existing_entries: &mut Vec<FileEntry>, loaded_entries: Vec<FileEntry>) -> SfvLoadSummary {
+    let mut summary = SfvLoadSummary::default();
+
+    for mut loaded_entry in loaded_entries {
+        summary.imported_count += 1;
+        if loaded_entry.error.is_some() {
+            summary.missing_count += 1;
+        }
+
+        if let Some(existing_entry) = existing_entries
+            .iter_mut()
+            .find(|entry| entry.path == loaded_entry.path)
+        {
+            existing_entry.filename = loaded_entry.filename;
+            if let Some(expected_crc32) = loaded_entry.expected_crc32.as_deref() {
+                existing_entry.set_expected_crc32(expected_crc32);
+            }
+            match loaded_entry.error.take() {
+                Some(error) => existing_entry.error = Some(error),
+                None if existing_entry.error.as_deref() == Some("File not found") => {
+                    existing_entry.error = None;
+                }
+                None => {}
+            }
+            summary.updated_count += 1;
+        } else {
+            existing_entries.push(loaded_entry);
+            summary.added_count += 1;
+        }
+    }
+
+    summary
+}
+
+fn format_loaded_sfv_status(manifest_path: &Path, summary: &SfvLoadSummary) -> String {
+    let manifest_name = manifest_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("SFV file");
+
+    let mut status = format!(
+        "Loaded {} entrie(s) from {}",
+        summary.imported_count,
+        manifest_name
+    );
+
+    if summary.updated_count > 0 {
+        status.push_str(&format!(", {} updated", summary.updated_count));
+    }
+
+    if summary.added_count > 0 {
+        status.push_str(&format!(", {} added", summary.added_count));
+    }
+
+    if summary.missing_count > 0 {
+        status.push_str(&format!(", {} missing", summary.missing_count));
+    }
+
+    status
+}
+
 fn hash_kind_from_qstring(value: &QString) -> Option<HashKind> {
     HashKind::from_id(&value.to_string())
 }
@@ -1249,5 +1375,59 @@ mod tests {
         assert!(status.starts_with("Failed to save CRC32 hash file:"));
 
         fs::remove_dir_all(&output_dir).unwrap();
+    }
+
+    #[test]
+    fn load_sfv_entries_resolves_manifest_relative_paths_and_marks_missing_files() {
+        let temp_dir = create_temp_dir("load-sfv-entries");
+        let existing_path = temp_dir.join("movie part 1.mkv");
+        let missing_name = "missing.bin";
+        let manifest_path = temp_dir.join("checksums.sfv");
+
+        fs::write(&existing_path, b"data").unwrap();
+        fs::write(
+            &manifest_path,
+            format!("movie part 1.mkv DEADBEEF\n{missing_name} CAFEBABE\n"),
+        )
+        .unwrap();
+
+        let entries = load_sfv_entries(&manifest_path).unwrap();
+
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].path, existing_path);
+        assert_eq!(entries[0].filename, "movie part 1.mkv");
+        assert_eq!(entries[0].expected_crc32.as_deref(), Some("DEADBEEF"));
+        assert_eq!(entries[0].error, None);
+        assert_eq!(entries[1].path, temp_dir.join(missing_name));
+        assert_eq!(entries[1].expected_crc32.as_deref(), Some("CAFEBABE"));
+        assert_eq!(entries[1].error.as_deref(), Some("File not found"));
+
+        fs::remove_dir_all(&temp_dir).unwrap();
+    }
+
+    #[test]
+    fn merge_sfv_entries_updates_existing_rows_by_path() {
+        let mut existing_entry = FileEntry::new(PathBuf::from("/tmp/movie.mkv"));
+        existing_entry.hashes.insert(HashKind::CRC32, "DEADBEEF".to_string());
+
+        let mut loaded_entry = FileEntry::new(PathBuf::from("/tmp/movie.mkv"));
+        loaded_entry.filename = "movie.mkv".to_string();
+        loaded_entry.set_expected_crc32("deadbeef");
+
+        let mut entries = vec![existing_entry];
+        let summary = merge_sfv_entries(&mut entries, vec![loaded_entry]);
+
+        assert_eq!(
+            summary,
+            SfvLoadSummary {
+                imported_count: 1,
+                added_count: 0,
+                updated_count: 1,
+                missing_count: 0,
+            }
+        );
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].expected_crc32.as_deref(), Some("DEADBEEF"));
+        assert_eq!(entries[0].verify_status(), 1);
     }
 }

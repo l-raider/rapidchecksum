@@ -32,6 +32,7 @@
 #include <QtGui/QKeySequence>
 #include <QtGui/QPalette>
 #include <QtCore/QItemSelectionModel>
+#include <QtCore/QFileInfo>
 
 #include "rapidchecksum/src/app_backend.cxxqt.h"
 
@@ -41,6 +42,9 @@ static char*  s_argv[]  = { s_argv0, nullptr };
 
 static QApplication* s_app = nullptr;
 static QMainWindow*  s_main_window = nullptr;
+static AppBackend*   s_backend = nullptr;
+static QTableView*   s_results_table = nullptr;
+static std::vector<QString> s_startup_sfv_paths;
 
 namespace {
 
@@ -195,6 +199,7 @@ extern "C" {
         auto* main_layout = new QVBoxLayout(central_widget);
         auto* toolbar_layout = new QHBoxLayout();
         auto* open_files_button = new QPushButton(QStringLiteral("Open Files..."));
+        auto* open_hash_file_button = new QPushButton(QStringLiteral("Open Hash File..."));
         auto* open_folder_button = new QPushButton(QStringLiteral("Open Folder..."));
         auto* start_button = new QPushButton(QStringLiteral("Start Hashing"));
         auto* cancel_button = new QPushButton(QStringLiteral("Cancel"));
@@ -207,6 +212,7 @@ extern "C" {
         auto* table_view = new QTableView();
         auto* backend = new AppBackend(central_widget);
         auto* open_files_action = new QAction(QStringLiteral("Open Files..."), window);
+        auto* open_hash_file_action = new QAction(QStringLiteral("Open Hash File..."), window);
         auto* open_folder_action = new QAction(QStringLiteral("Open Folder..."), window);
         auto* remove_selected_action = new QAction(QStringLiteral("Remove Selected"), window);
         auto* exit_action = new QAction(QStringLiteral("Exit"), window);
@@ -230,11 +236,13 @@ extern "C" {
         hash_casing_menu->addAction(lowercase_hash_action);
 
         open_files_action->setShortcut(QKeySequence(QStringLiteral("Ctrl+O")));
+        open_hash_file_action->setShortcut(QKeySequence(QStringLiteral("Ctrl+Shift+O")));
         open_folder_action->setShortcut(QKeySequence(QStringLiteral("Ctrl+L")));
         remove_selected_action->setShortcut(QKeySequence(QStringLiteral("Delete")));
         exit_action->setShortcut(QKeySequence(QStringLiteral("Ctrl+Q")));
 
         window->addAction(open_files_action);
+        window->addAction(open_hash_file_action);
         window->addAction(open_folder_action);
         window->addAction(remove_selected_action);
         window->addAction(exit_action);
@@ -244,6 +252,7 @@ extern "C" {
 
         toolbar_layout->setSpacing(4);
         toolbar_layout->addWidget(open_files_button);
+        toolbar_layout->addWidget(open_hash_file_button);
         toolbar_layout->addWidget(open_folder_button);
         toolbar_layout->addWidget(start_button);
         toolbar_layout->addWidget(cancel_button);
@@ -280,6 +289,52 @@ extern "C" {
                 backend->add_files(files);
                 apply_table_column_width_hints(table_view);
             }
+        };
+
+        auto open_hash_file = [backend, table_view, window](bool) {
+            const auto path = QFileDialog::getOpenFileName(
+                window,
+                QStringLiteral("Open SFV file"),
+                QString(),
+                QStringLiteral("SFV Files (*.sfv);;All Files (*)"));
+            if (!path.isEmpty()) {
+                backend->load_hash_file(path);
+                apply_table_column_width_hints(table_view);
+            }
+        };
+
+        auto save_hash_file = [backend, table_view](const QString& algorithm_id) {
+            const auto path = QFileDialog::getSaveFileName(
+                table_view,
+                QStringLiteral("Save hash file"),
+                QString(),
+                algorithm_id == QStringLiteral("crc32")
+                    ? QStringLiteral("SFV Files (*.sfv);;All Files (*)")
+                    : QStringLiteral("All Files (*)"));
+            if (!path.isEmpty()) {
+                QString final_path = path;
+                if (algorithm_id == QStringLiteral("crc32") && QFileInfo(final_path).suffix().isEmpty()) {
+                    final_path += QStringLiteral(".sfv");
+                }
+                backend->save_hash_file(algorithm_id, final_path);
+            }
+        };
+
+        auto populate_save_hash_menu = [backend, save_hash_file](QMenu* menu) {
+            menu->clear();
+            const auto algorithm_ids = backend->all_hash_algorithm_ids();
+            for (int idx = 0; idx < algorithm_ids.size(); ++idx) {
+                const QString algorithm_id = algorithm_ids.at(idx);
+                if (!backend->is_hash_algorithm_enabled(algorithm_id)) {
+                    continue;
+                }
+
+                auto* action = menu->addAction(backend->hash_algorithm_save_label(algorithm_id));
+                QObject::connect(action, &QAction::triggered, menu, [save_hash_file, algorithm_id]() {
+                    save_hash_file(algorithm_id);
+                });
+            }
+            menu->setEnabled(!menu->actions().isEmpty());
         };
 
         auto open_folder = [backend, table_view, window](bool) {
@@ -487,7 +542,7 @@ extern "C" {
             table_view,
             &QTableView::customContextMenuRequested,
             table_view,
-            [table_view, backend](const QPoint& pos) {
+            [table_view, backend, populate_save_hash_menu](const QPoint& pos) {
                 const QModelIndex index = table_view->indexAt(pos);
                 if (!index.isValid()) {
                     return;
@@ -528,31 +583,13 @@ extern "C" {
 
                 menu.addSeparator();
                 auto* save_hash_menu = menu.addMenu(QStringLiteral("Save Hash File"));
-                for (int idx = 0; idx < algorithm_ids.size(); ++idx) {
-                    const QString algorithm_id = algorithm_ids.at(idx);
-                    if (!backend->is_hash_algorithm_enabled(algorithm_id)) {
-                        continue;
-                    }
-
-                    auto* action = save_hash_menu->addAction(backend->hash_algorithm_save_label(algorithm_id));
-                    QObject::connect(
-                        action,
-                        &QAction::triggered,
-                        &menu,
-                        [backend, table_view, algorithm_id]() {
-                            const auto path = QFileDialog::getSaveFileName(
-                                table_view,
-                                QStringLiteral("Save hash file"));
-                            if (!path.isEmpty()) {
-                                backend->save_hash_file(algorithm_id, path);
-                            }
-                        });
-                }
+                populate_save_hash_menu(save_hash_menu);
 
                 menu.exec(table_view->viewport()->mapToGlobal(pos));
             });
 
         QObject::connect(open_files_action, &QAction::triggered, window, open_files);
+        QObject::connect(open_hash_file_action, &QAction::triggered, window, open_hash_file);
         QObject::connect(open_folder_action, &QAction::triggered, window, open_folder);
         QObject::connect(hash_algorithms_action, &QAction::triggered, window, show_hash_algorithms_dialog);
         QObject::connect(file_renaming_action, &QAction::triggered, window, show_file_renaming_dialog);
@@ -563,6 +600,7 @@ extern "C" {
         });
 
         QObject::connect(open_files_button, &QPushButton::clicked, window, open_files);
+        QObject::connect(open_hash_file_button, &QPushButton::clicked, window, open_hash_file);
         QObject::connect(open_folder_button, &QPushButton::clicked, window, open_folder);
         QObject::connect(start_button, &QPushButton::clicked, backend, [backend](bool) {
             backend->start_hashing();
@@ -590,10 +628,16 @@ extern "C" {
         QObject::connect(rename_button, &QPushButton::clicked, window, confirm_rename_files);
 
         auto* file_menu = window->menuBar()->addMenu(QStringLiteral("File"));
+        auto* save_hash_menu_bar = new QMenu(QStringLiteral("Save Hash File"), file_menu);
         file_menu->addAction(open_files_action);
+        file_menu->addAction(open_hash_file_action);
         file_menu->addAction(open_folder_action);
+        file_menu->addMenu(save_hash_menu_bar);
         file_menu->addSeparator();
         file_menu->addAction(exit_action);
+        QObject::connect(save_hash_menu_bar, &QMenu::aboutToShow, window, [populate_save_hash_menu, save_hash_menu_bar]() {
+            populate_save_hash_menu(save_hash_menu_bar);
+        });
 
         auto* settings_menu = window->menuBar()->addMenu(QStringLiteral("Settings"));
         settings_menu->addAction(hash_algorithms_action);
@@ -602,6 +646,7 @@ extern "C" {
 
         auto sync_widget_state = [backend,
                                   open_files_button,
+                                  open_hash_file_button,
                                   open_folder_button,
                                   start_button,
                                   cancel_button,
@@ -609,7 +654,9 @@ extern "C" {
                                   remove_button,
                                   rename_button,
                                   open_files_action,
+                                  open_hash_file_action,
                                   open_folder_action,
+                                  save_hash_menu_bar,
                                   remove_selected_action,
                                   hash_algorithms_action,
                                   hash_casing_menu,
@@ -621,6 +668,7 @@ extern "C" {
             const bool has_selection = backend->getSelected_row() >= 0;
 
             open_files_button->setEnabled(!is_hashing);
+            open_hash_file_button->setEnabled(!is_hashing);
             open_folder_button->setEnabled(!is_hashing);
             start_button->setEnabled(!is_hashing && has_files);
             cancel_button->setEnabled(is_hashing);
@@ -628,7 +676,9 @@ extern "C" {
             remove_button->setEnabled(!is_hashing && has_selection);
             rename_button->setEnabled(!is_hashing && has_files);
             open_files_action->setEnabled(!is_hashing);
+            open_hash_file_action->setEnabled(!is_hashing);
             open_folder_action->setEnabled(!is_hashing);
+            save_hash_menu_bar->setEnabled(!is_hashing && has_files);
             remove_selected_action->setEnabled(!is_hashing && has_selection);
             hash_algorithms_action->setEnabled(!is_hashing);
             hash_casing_menu->setEnabled(!is_hashing);
@@ -656,6 +706,9 @@ extern "C" {
         sync_widget_state();
         apply_table_column_width_hints(table_view);
 
+    s_backend = backend;
+    s_results_table = table_view;
+
         window->setWindowTitle(widget_window_title(backend));
         window->resize(1000, 700);
         window->setCentralWidget(central_widget);
@@ -666,6 +719,31 @@ extern "C" {
     {
         if (s_app) {
             QApplication::clipboard()->setText(QString::fromUtf8(text));
+        }
+    }
+
+    void qt_queue_startup_sfv(const char* path)
+    {
+        if (!path) {
+            return;
+        }
+
+        s_startup_sfv_paths.push_back(QString::fromUtf8(path));
+    }
+
+    void qt_process_startup_sfv()
+    {
+        if (!s_backend) {
+            return;
+        }
+
+        for (const auto& path : s_startup_sfv_paths) {
+            s_backend->load_hash_file(path);
+        }
+        s_startup_sfv_paths.clear();
+
+        if (s_results_table) {
+            apply_table_column_width_hints(s_results_table);
         }
     }
 }

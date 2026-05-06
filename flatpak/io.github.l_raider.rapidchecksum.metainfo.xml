@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.l_raider.rapidchecksum</id>
+  <name>RapidChecksum</name>
+  <summary>Hash files and load or save SFV checksum manifests</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0</project_license>
+  <launchable type="desktop-id">io.github.l_raider.rapidchecksum.desktop</launchable>
+  <description>
+    <p>RapidChecksum is a Linux file hashing utility built with Rust and Qt. It calculates CRC32, MD5, SHA1, SHA256, SHA512, ED2K, BLAKE, and SHA-3 hashes, and it can load or save UTF-8 SFV checksum files for CRC32 verification workflows.</p>
+  </description>
+  <provides>
+    <binary>rapidchecksum</binary>
+    <mediatype>text/x-sfv</mediatype>
+  </provides>
+</component>

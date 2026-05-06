@@ -2,9 +2,10 @@
 Name=RapidChecksum
 GenericName=File Checksum Utility
 Comment=Hash files with CRC32, MD5, SHA1, SHA256, SHA512
-Exec=rapidchecksum
+Exec=rapidchecksum %F
 Icon=io.github.l_raider.rapidchecksum
 Terminal=false
 Type=Application
 Categories=Utility;FileTools;
 StartupNotify=true
+MimeType=text/x-sfv;
