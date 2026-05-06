@@ -358,6 +358,9 @@ impl qobject::AppBackend {
     }
 
     fn add_files(mut self: Pin<&mut Self>, paths: &QStringList) {
+        if self.rust().is_hashing {
+            return;
+        }
         let mut new_paths: Vec<PathBuf> = Vec::new();
         for i in 0..paths.len() {
             if let Some(s) = paths.get(i) {
@@ -637,6 +640,9 @@ impl qobject::AppBackend {
     }
 
     fn remove_row_at(mut self: Pin<&mut Self>, row: i32) {
+        if self.rust().is_hashing {
+            return;
+        }
         if row < 0 || row as usize >= self.rust().entries.len() {
             return;
         }
