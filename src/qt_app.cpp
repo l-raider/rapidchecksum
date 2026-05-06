@@ -690,6 +690,7 @@ extern "C" {
                                   remove_selected_action,
                                   hash_algorithms_action,
                                   hash_casing_menu,
+                                  file_renaming_action,
                                   file_progress,
                                   global_progress,
                                   status_label]() {
@@ -712,6 +713,7 @@ extern "C" {
             remove_selected_action->setEnabled(!is_hashing && has_selection);
             hash_algorithms_action->setEnabled(!is_hashing);
             hash_casing_menu->setEnabled(!is_hashing);
+            file_renaming_action->setEnabled(!is_hashing);
 
             file_progress->setVisible(is_hashing);
             global_progress->setVisible(is_hashing);
