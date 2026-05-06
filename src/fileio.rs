@@ -121,6 +121,34 @@ fn write_standard_hash_line(
     writeln!(writer)
 }
 
+fn invalid_sfv_filename(message: &str) -> io::Error {
+    io::Error::new(
+        io::ErrorKind::InvalidInput,
+        format!("filename cannot be represented in SFV: {message}"),
+    )
+}
+
+fn validate_sfv_filename(filename: &str) -> io::Result<()> {
+    if filename.is_empty() {
+        return Err(invalid_sfv_filename("filenames must not be empty"));
+    }
+    if filename.starts_with(';') {
+        return Err(invalid_sfv_filename("filenames must not start with ';'"));
+    }
+    if filename.ends_with(' ') {
+        return Err(invalid_sfv_filename("filenames must not end with spaces"));
+    }
+    if filename.contains('\t') {
+        return Err(invalid_sfv_filename("filenames must not contain tabs"));
+    }
+    if filename.chars().any(|ch| matches!(ch, '\n' | '\r')) {
+        return Err(invalid_sfv_filename(
+            "filenames must not contain line breaks",
+        ));
+    }
+    Ok(())
+}
+
 /// Write a hash file for the given entries. Format depends on hash kind:
 /// - CRC32 (SFV): `filename CRC32VALUE`
 /// - Others: `hashvalue *filename`
@@ -130,6 +158,24 @@ pub fn write_hash_file(
     kind: HashKind,
     uppercase: bool,
 ) -> io::Result<()> {
+    let lines: Vec<_> = entries
+        .iter()
+        .filter_map(|entry| {
+            let hash = entry.formatted_hash_value(kind, uppercase);
+            if hash.is_empty() {
+                None
+            } else {
+                Some((entry.filename.as_str(), hash))
+            }
+        })
+        .collect();
+
+    if kind == HashKind::CRC32 {
+        for (filename, _) in &lines {
+            validate_sfv_filename(filename)?;
+        }
+    }
+
     let file = File::create(output_path)?;
     let mut writer = BufWriter::new(file);
 
@@ -138,20 +184,15 @@ pub fn write_hash_file(
         writeln!(writer, ";")?;
     }
 
-    for entry in entries {
-        let hash = entry.formatted_hash_value(kind, uppercase);
-        if hash.is_empty() {
-            continue;
-        }
-
+    for (filename, hash) in lines {
         match kind {
             // SFV format: filename HASH
             HashKind::CRC32 => {
-                writeln!(writer, "{} {}", entry.filename, hash)?;
+                writeln!(writer, "{} {}", filename, hash)?;
             }
             // Standard hash format: hash *filename (binary mode indicator)
             _ => {
-                write_standard_hash_line(&mut writer, &hash, &entry.filename)?;
+                write_standard_hash_line(&mut writer, &hash, filename)?;
             }
         }
     }
@@ -297,6 +338,35 @@ mod tests {
         let content = fs::read_to_string(&output_path).unwrap();
 
         assert_eq!(content, "\\deadbeef *line\\nbreak\\\\name.bin\n");
+
+        fs::remove_dir_all(&output_dir).unwrap();
+    }
+
+    #[test]
+    fn write_hash_file_rejects_unrepresentable_sfv_filenames() {
+        let output_dir = create_temp_dir("fileio-sfv-invalid-filename");
+
+        for (index, filename) in [
+            ";comment.bin",
+            "tab\tname.bin",
+            "trail.bin ",
+            "line\nbreak.bin",
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let output_path = output_dir.join(format!("invalid-{index}.sfv"));
+            let mut entry = FileEntry::default();
+            entry.filename = filename.to_string();
+            entry.hashes.insert(HashKind::CRC32, "deadbeef".to_string());
+
+            let err = write_hash_file(&[entry], &output_path, HashKind::CRC32, true)
+                .unwrap_err();
+
+            assert_eq!(err.kind(), io::ErrorKind::InvalidInput);
+            assert!(err.to_string().contains("cannot be represented in SFV"));
+            assert!(!output_path.exists());
+        }
 
         fs::remove_dir_all(&output_dir).unwrap();
     }
