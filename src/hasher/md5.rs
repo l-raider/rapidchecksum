@@ -13,7 +13,7 @@ enum Md5Backend {
 }
 
 struct OpenSslMd5Hasher {
-    inner: Hasher,
+    inner: Option<Hasher>,
 }
 
 impl Md5Hasher {
@@ -51,7 +51,7 @@ impl HashAlgorithm for Md5Hasher {
 impl OpenSslMd5Hasher {
     fn new() -> Option<Self> {
         let inner = Hasher::new(MessageDigest::md5()).ok()?;
-        Some(Self { inner })
+        Some(Self { inner: Some(inner) })
     }
 
     fn update(&mut self, data: &[u8]) {
@@ -59,16 +59,21 @@ impl OpenSslMd5Hasher {
             return;
         }
 
-        self.inner
-            .update(data)
-            .expect("OpenSSL MD5 update failed");
+        if let Some(ref mut inner) = self.inner {
+            if inner.update(data).is_err() {
+                // OpenSSL update failed; mark as failed so finalize returns empty
+                self.inner = None;
+            }
+        }
     }
 
     fn finalize(mut self) -> Vec<u8> {
-        self.inner
-            .finish()
-            .expect("OpenSSL MD5 finalize failed")
-            .as_ref()
-            .to_vec()
+        match self.inner.take() {
+            Some(mut inner) => inner
+                .finish()
+                .map(|b| b.as_ref().to_vec())
+                .unwrap_or_default(),
+            None => Vec::new(),
+        }
     }
 }
