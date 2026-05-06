@@ -28,18 +28,6 @@ impl HashKind {
             HashKind::SHA512 => "SHA512",
         }
     }
-
-    /// File extension used for hash files (e.g. "sfv" for CRC32)
-    #[allow(dead_code)]
-    pub fn file_extension(&self) -> &'static str {
-        match self {
-            HashKind::CRC32 => "sfv",
-            HashKind::MD5 => "md5",
-            HashKind::SHA1 => "sha1",
-            HashKind::SHA256 => "sha256",
-            HashKind::SHA512 => "sha512",
-        }
-    }
 }
 
 impl fmt::Display for HashKind {
