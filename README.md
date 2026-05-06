@@ -4,8 +4,8 @@ A Linux clone of [RapidCRC Unicode](https://www.ov2.eu/programs/rapidcrc-unicode
 
 ## Features
 
-- Hash algorithms: CRC32, MD5, SHA1, SHA256, SHA512
-- Export results as SFV (CRC32) or standard `hash *filename` format (MD5/SHA/etc.)
+- Hash algorithms: CRC32, MD5, SHA1, SHA256, SHA512, ED2K, BLAKE3, BLAKE2sp, SHA3-224, SHA3-256, SHA3-384, SHA3-512
+- Export results as SFV (CRC32) or standard `hash *filename` format (all other algorithms)
 
 ## Dependencies
 
@@ -31,9 +31,9 @@ The binary is written to `target/release/rapidchecksum`.
 
 | Layer | Tech |
 |-------|------|
-| UI | QML (`qml/main.qml`) |
+| UI | Qt Widgets (`src/qt_app.cpp`) |
 | Qt/Rust bridge | cxx-qt 0.8 (`src/app_backend.rs`) |
-| Hashing | Pure Rust (`src/hasher/`) - crc32fast, md-5, sha1, sha2 |
+| Hashing | Pure Rust (`src/hasher/`) - crc32fast, md-5, sha1, sha2, sha3, ed2k, blake3, blake2s_simd |
 | File I/O | `src/fileio.rs` - SFV / hash file read & write |
 | Worker | `src/worker.rs` - background thread with progress channel |
 | Config | `src/config.rs` - persisted settings via serde\_json |

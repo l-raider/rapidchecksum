@@ -1,26 +1,26 @@
-use sha2::Digest;
+use ::ed2k::digest::Digest;
 
-use super::{hex_encode, HashAlgorithm};
+use super::HashAlgorithm;
 
-pub struct Sha256Hasher {
-    inner: sha2::Sha256,
+pub struct Ed2kHasher {
+    inner: ::ed2k::Ed2k,
 }
 
-impl Sha256Hasher {
+impl Ed2kHasher {
     pub fn new() -> Self {
         Self {
-            inner: sha2::Sha256::new(),
+            inner: ::ed2k::Ed2k::new(),
         }
     }
 }
 
-impl HashAlgorithm for Sha256Hasher {
+impl HashAlgorithm for Ed2kHasher {
     fn update(&mut self, data: &[u8]) {
         self.inner.update(data);
     }
 
     fn finalize(self: Box<Self>) -> String {
         let result = self.inner.finalize();
-        hex_encode(&result)
+        format!("{result:x}")
     }
 }

@@ -1,6 +1,6 @@
 use sha2::Digest;
 
-use super::HashAlgorithm;
+use super::{hex_encode, HashAlgorithm};
 
 pub struct Sha512Hasher {
     inner: sha2::Sha512,
@@ -23,8 +23,4 @@ impl HashAlgorithm for Sha512Hasher {
         let result = self.inner.finalize();
         hex_encode(&result)
     }
-}
-
-fn hex_encode(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{:02x}", b)).collect()
 }

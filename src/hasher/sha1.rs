@@ -1,6 +1,6 @@
 use sha1_crate::Digest;
 
-use super::HashAlgorithm;
+use super::{hex_encode, HashAlgorithm};
 
 pub struct Sha1Hasher {
     inner: sha1_crate::Sha1,
@@ -23,8 +23,4 @@ impl HashAlgorithm for Sha1Hasher {
         let result = self.inner.finalize();
         hex_encode(&result)
     }
-}
-
-fn hex_encode(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{:02x}", b)).collect()
 }

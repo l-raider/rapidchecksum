@@ -1,7 +1,7 @@
 use md5::{Digest, Md5};
 use openssl::hash::{Hasher, MessageDigest};
 
-use super::HashAlgorithm;
+use super::{hex_encode, HashAlgorithm};
 
 pub struct Md5Hasher {
     inner: Md5Backend,
@@ -71,8 +71,4 @@ impl OpenSslMd5Hasher {
             .as_ref()
             .to_vec()
     }
-}
-
-fn hex_encode(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{:02x}", b)).collect()
 }

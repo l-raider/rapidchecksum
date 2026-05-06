@@ -1,20 +1,20 @@
-use sha2::Digest;
+use sha3::{Digest, Sha3_256};
 
 use super::{hex_encode, HashAlgorithm};
 
-pub struct Sha256Hasher {
-    inner: sha2::Sha256,
+pub struct Sha3_256Hasher {
+    inner: Sha3_256,
 }
 
-impl Sha256Hasher {
+impl Sha3_256Hasher {
     pub fn new() -> Self {
         Self {
-            inner: sha2::Sha256::new(),
+            inner: Sha3_256::new(),
         }
     }
 }
 
-impl HashAlgorithm for Sha256Hasher {
+impl HashAlgorithm for Sha3_256Hasher {
     fn update(&mut self, data: &[u8]) {
         self.inner.update(data);
     }

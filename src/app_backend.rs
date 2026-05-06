@@ -72,11 +72,6 @@ pub mod qobject {
         #[qproperty(f32, global_progress)]
         #[qproperty(QString, status_text)]
         #[qproperty(i32, selected_row)]
-        #[qproperty(bool, setting_crc32)]
-        #[qproperty(bool, setting_md5)]
-        #[qproperty(bool, setting_sha1)]
-        #[qproperty(bool, setting_sha256)]
-        #[qproperty(bool, setting_sha512)]
         #[qproperty(bool, setting_hash_uppercase)]
         #[qproperty(i32, file_count)]
         #[qproperty(QString, setting_rename_pattern)]
@@ -170,15 +165,33 @@ pub mod qobject {
         #[qinvokable]
         fn copy_filepath(self: &AppBackend);
         #[qinvokable]
-        fn copy_hash(self: &AppBackend, algo: i32);
+        fn copy_hash(self: &AppBackend, algo_id: &QString);
         #[qinvokable]
         fn open_folder(self: &AppBackend);
         #[qinvokable]
-        fn save_hash_file(self: Pin<&mut AppBackend>, algo: i32, path: &QString);
+        fn save_hash_file(self: Pin<&mut AppBackend>, algo_id: &QString, path: &QString);
         #[qinvokable]
         fn apply_settings(self: Pin<&mut AppBackend>);
         #[qinvokable]
         fn visible_columns(self: &AppBackend) -> QStringList;
+        #[qinvokable]
+        fn all_hash_algorithm_ids(self: &AppBackend) -> QStringList;
+        #[qinvokable]
+        fn hash_algorithm_name(self: &AppBackend, algo_id: &QString) -> QString;
+        #[qinvokable]
+        fn hash_algorithm_tag(self: &AppBackend, algo_id: &QString) -> QString;
+        #[qinvokable]
+        fn hash_algorithm_save_label(self: &AppBackend, algo_id: &QString) -> QString;
+        #[qinvokable]
+        fn hash_hex_length_for_column(self: &AppBackend, column: i32) -> i32;
+        #[qinvokable]
+        fn is_hash_algorithm_enabled(self: &AppBackend, algo_id: &QString) -> bool;
+        #[qinvokable]
+        fn set_hash_algorithm_enabled(
+            self: Pin<&mut AppBackend>,
+            algo_id: &QString,
+            enabled: bool,
+        );
         #[qinvokable]
         fn apply_rename_settings(self: Pin<&mut AppBackend>);
         #[qinvokable]
@@ -211,11 +224,6 @@ pub struct AppBackendRust {
     global_progress: f32,
     status_text: QString,
     selected_row: i32,
-    setting_crc32: bool,
-    setting_md5: bool,
-    setting_sha1: bool,
-    setting_sha256: bool,
-    setting_sha512: bool,
     setting_hash_uppercase: bool,
     file_count: i32,
     setting_rename_pattern: QString,
@@ -233,11 +241,6 @@ impl Default for AppBackendRust {
             files_completed: 0,
             total_files: 0,
             start_time: None,
-            setting_crc32: config.hash_crc32,
-            setting_md5: config.hash_md5,
-            setting_sha1: config.hash_sha1,
-            setting_sha256: config.hash_sha256,
-            setting_sha512: config.hash_sha512,
             setting_hash_uppercase: config.hash_uppercase,
             config,
             hash_generation: 0,
@@ -650,23 +653,18 @@ impl qobject::AppBackend {
         }
     }
 
-    fn copy_hash(&self, algo: i32) {
+    fn copy_hash(&self, algo_id: &QString) {
         let row = self.rust().selected_row;
         if row < 0 {
             return;
         }
+        let Some(kind) = hash_kind_from_qstring(algo_id) else {
+            return;
+        };
         let rust = self.rust();
         let entries = &rust.entries;
         let hash_uppercase = rust.config.hash_uppercase;
         if let Some(entry) = entries.get(row as usize) {
-            let kind = match algo {
-                0 => HashKind::CRC32,
-                1 => HashKind::MD5,
-                2 => HashKind::SHA1,
-                3 => HashKind::SHA256,
-                4 => HashKind::SHA512,
-                _ => return,
-            };
             let hash = entry.formatted_hash_value(kind, hash_uppercase);
             if !hash.is_empty() {
                 set_clipboard(&hash);
@@ -687,14 +685,9 @@ impl qobject::AppBackend {
         }
     }
 
-    fn save_hash_file(mut self: Pin<&mut Self>, algo: i32, path: &QString) {
-        let kind = match algo {
-            0 => HashKind::CRC32,
-            1 => HashKind::MD5,
-            2 => HashKind::SHA1,
-            3 => HashKind::SHA256,
-            4 => HashKind::SHA512,
-            _ => return,
+    fn save_hash_file(mut self: Pin<&mut Self>, algo_id: &QString, path: &QString) {
+        let Some(kind) = hash_kind_from_qstring(algo_id) else {
+            return;
         };
         let output_path = PathBuf::from(path.to_string());
         let status = {
@@ -720,11 +713,6 @@ impl qobject::AppBackend {
         unsafe { self.as_mut().begin_reset_model(); }
         {
             let mut r = self.as_mut().rust_mut();
-            r.config.hash_crc32 = r.setting_crc32;
-            r.config.hash_md5 = r.setting_md5;
-            r.config.hash_sha1 = r.setting_sha1;
-            r.config.hash_sha256 = r.setting_sha256;
-            r.config.hash_sha512 = r.setting_sha512;
             r.config.hash_uppercase = r.setting_hash_uppercase;
             r.config.save();
             r.visible_kinds = r.config.enabled_hash_kinds();
@@ -738,6 +726,56 @@ impl qobject::AppBackend {
             list.append(QString::from(kind.name()));
         }
         list
+    }
+
+    fn all_hash_algorithm_ids(&self) -> QStringList {
+        let mut list = QStringList::default();
+        for &kind in HashKind::all() {
+            list.append(QString::from(kind.id()));
+        }
+        list
+    }
+
+    fn hash_algorithm_name(&self, algo_id: &QString) -> QString {
+        hash_kind_from_qstring(algo_id)
+            .map(|kind| QString::from(kind.name()))
+            .unwrap_or_default()
+    }
+
+    fn hash_algorithm_tag(&self, algo_id: &QString) -> QString {
+        hash_kind_from_qstring(algo_id)
+            .map(|kind| QString::from(kind.rename_placeholder()))
+            .unwrap_or_default()
+    }
+
+    fn hash_algorithm_save_label(&self, algo_id: &QString) -> QString {
+        hash_kind_from_qstring(algo_id)
+            .map(|kind| QString::from(kind.save_dialog_label()))
+            .unwrap_or_default()
+    }
+
+    fn hash_hex_length_for_column(&self, column: i32) -> i32 {
+        if column <= 0 {
+            return 0;
+        }
+
+        self.rust()
+            .visible_kinds
+            .get(column as usize - 1)
+            .map(|kind| kind.output_hex_len() as i32)
+            .unwrap_or(0)
+    }
+
+    fn is_hash_algorithm_enabled(&self, algo_id: &QString) -> bool {
+        hash_kind_from_qstring(algo_id)
+            .map(|kind| self.rust().config.is_hash_enabled(kind))
+            .unwrap_or(false)
+    }
+
+    fn set_hash_algorithm_enabled(mut self: Pin<&mut Self>, algo_id: &QString, enabled: bool) {
+        if let Some(kind) = hash_kind_from_qstring(algo_id) {
+            self.as_mut().rust_mut().config.set_hash_enabled(kind, enabled);
+        }
     }
 
     fn apply_rename_settings(mut self: Pin<&mut Self>) {
@@ -932,12 +970,6 @@ fn render_rename_pattern(
         format!(".{ext}")
     };
 
-    let crc = entry.formatted_hash_value(HashKind::CRC32, hash_uppercase);
-    let md5 = entry.formatted_hash_value(HashKind::MD5, hash_uppercase);
-    let sha1 = entry.formatted_hash_value(HashKind::SHA1, hash_uppercase);
-    let sha256 = entry.formatted_hash_value(HashKind::SHA256, hash_uppercase);
-    let sha512 = entry.formatted_hash_value(HashKind::SHA512, hash_uppercase);
-
     let mut rendered = String::with_capacity(pattern.len() + stem.len() + ext.len());
     let mut index = 0;
 
@@ -952,22 +984,20 @@ fn render_rename_pattern(
         } else if rest.starts_with("%FILEEXT%") {
             rendered.push_str(ext);
             index += "%FILEEXT%".len();
-        } else if rest.starts_with("%CRC%") {
-            rendered.push_str(&crc);
-            index += "%CRC%".len();
-        } else if rest.starts_with("%MD5%") {
-            rendered.push_str(&md5);
-            index += "%MD5%".len();
-        } else if rest.starts_with("%SHA1%") {
-            rendered.push_str(&sha1);
-            index += "%SHA1%".len();
-        } else if rest.starts_with("%SHA256%") {
-            rendered.push_str(&sha256);
-            index += "%SHA256%".len();
-        } else if rest.starts_with("%SHA512%") {
-            rendered.push_str(&sha512);
-            index += "%SHA512%".len();
         } else if let Some(ch) = rest.chars().next() {
+            let mut matched_placeholder = false;
+            for &kind in HashKind::all() {
+                let placeholder = kind.rename_placeholder();
+                if rest.starts_with(placeholder) {
+                    rendered.push_str(&entry.formatted_hash_value(kind, hash_uppercase));
+                    index += placeholder.len();
+                    matched_placeholder = true;
+                    break;
+                }
+            }
+            if matched_placeholder {
+                continue;
+            }
             rendered.push(ch);
             index += ch.len_utf8();
         } else {
@@ -979,7 +1009,7 @@ fn render_rename_pattern(
 }
 
 fn prepare_rename_stem(pattern: &str, raw_stem: &str, entry: &FileEntry) -> String {
-    if !pattern.contains("%CRC%") {
+    if !pattern.contains(HashKind::CRC32.rename_placeholder()) {
         return raw_stem.to_string();
     }
 
@@ -1005,6 +1035,10 @@ fn save_hash_file_status(
         ),
         Err(err) => format!("Failed to save {} hash file: {}", kind.name(), err),
     }
+}
+
+fn hash_kind_from_qstring(value: &QString) -> Option<HashKind> {
+    HashKind::from_id(&value.to_string())
 }
 
 fn strip_matching_crc32_suffix(stem: &str, crc32: &str) -> String {
@@ -1177,6 +1211,33 @@ mod tests {
         );
 
         assert_eq!(new_name, "movie_%CRC%_backup_DEADBEEF.mkv");
+    }
+
+    #[test]
+    fn render_rename_pattern_supports_new_hash_placeholders() {
+        let mut entry = FileEntry::default();
+        entry.hashes.insert(
+            HashKind::ED2K,
+            "aa010fbc1d14c795d86ef98c95479d17".to_string(),
+        );
+        entry.hashes.insert(
+            HashKind::SHA3_256,
+            "3a985da74fe225b2045c172d6bd390bd855f086e3e9d525b46bfe24511431532"
+                .to_string(),
+        );
+
+        let new_name = render_rename_pattern(
+            "%FILENAME%_%ED2K%_%SHA3_256%.%FILEEXT%",
+            "movie",
+            "mkv",
+            &entry,
+            false,
+        );
+
+        assert_eq!(
+            new_name,
+            "movie_aa010fbc1d14c795d86ef98c95479d17_3a985da74fe225b2045c172d6bd390bd855f086e3e9d525b46bfe24511431532.mkv"
+        );
     }
 
     #[test]

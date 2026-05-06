@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <memory>
+#include <vector>
 
 #include <QtWidgets/QApplication>
 #include <QtWidgets/QAbstractItemView>
@@ -107,29 +108,13 @@ static int progress_value(float progress)
     return std::clamp(scaled, 0, 1000);
 }
 
-static QString representative_hash_text(const QString& column_name)
+static QString representative_hash_text(int hex_length)
 {
-    if (column_name == QStringLiteral("CRC32")) {
-        return QStringLiteral("01234567");
-    }
-    if (column_name == QStringLiteral("MD5")) {
-        return QStringLiteral("0123456789abcdef0123456789abcdef");
-    }
-    if (column_name == QStringLiteral("SHA1")) {
-        return QStringLiteral("0123456789abcdef0123456789abcdef01234567");
-    }
-    if (column_name == QStringLiteral("SHA256")) {
-        return QStringLiteral("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef");
-    }
-    if (column_name == QStringLiteral("SHA512")) {
-        return QStringLiteral(
-            "0123456789abcdef0123456789abcdef"
-            "0123456789abcdef0123456789abcdef"
-            "0123456789abcdef0123456789abcdef"
-            "0123456789abcdef0123456789abcdef");
+    if (hex_length <= 0) {
+        return QString();
     }
 
-    return QString();
+    return QString(hex_length, QLatin1Char('0'));
 }
 
 static int padded_text_width(const QFontMetrics& metrics, const QString& text)
@@ -149,6 +134,11 @@ static void apply_table_column_width_hints(QTableView* table_view)
         return;
     }
 
+    auto* backend = qobject_cast<AppBackend*>(model);
+    if (!backend) {
+        return;
+    }
+
     const int last_column = column_count - 1;
     const int verify_column = last_column - 1;
     const QFont fixed_font = QFontDatabase::systemFont(QFontDatabase::FixedFont);
@@ -159,7 +149,7 @@ static void apply_table_column_width_hints(QTableView* table_view)
         const QString header = model->headerData(column, Qt::Horizontal, Qt::DisplayRole).toString();
         int desired_width = padded_text_width(fixed_metrics, header);
 
-        const QString sample = representative_hash_text(header);
+        const QString sample = representative_hash_text(backend->hash_hex_length_for_column(column));
         if (!sample.isEmpty()) {
             desired_width = std::max(desired_width, padded_text_width(fixed_metrics, sample));
         }
@@ -308,37 +298,36 @@ extern "C" {
             dialog.setModal(true);
 
             auto* layout = new QVBoxLayout(&dialog);
-            auto* crc32 = new QCheckBox(QStringLiteral("CRC32"), &dialog);
-            auto* md5 = new QCheckBox(QStringLiteral("MD5"), &dialog);
-            auto* sha1 = new QCheckBox(QStringLiteral("SHA1"), &dialog);
-            auto* sha256 = new QCheckBox(QStringLiteral("SHA256"), &dialog);
-            auto* sha512 = new QCheckBox(QStringLiteral("SHA512"), &dialog);
+            auto* algorithms_layout = new QGridLayout();
             auto* buttons = new QDialogButtonBox(
                 QDialogButtonBox::Ok | QDialogButtonBox::Cancel,
                 &dialog);
+            struct AlgorithmCheckbox {
+                QString id;
+                QCheckBox* checkbox;
+            };
+            std::vector<AlgorithmCheckbox> algorithm_checkboxes;
+            const auto algorithm_ids = backend->all_hash_algorithm_ids();
+            const int column_count = algorithm_ids.size() > 8 ? 2 : 1;
 
-            crc32->setChecked(backend->getSetting_crc32());
-            md5->setChecked(backend->getSetting_md5());
-            sha1->setChecked(backend->getSetting_sha1());
-            sha256->setChecked(backend->getSetting_sha256());
-            sha512->setChecked(backend->getSetting_sha512());
+            for (int index = 0; index < algorithm_ids.size(); ++index) {
+                const QString algorithm_id = algorithm_ids.at(index);
+                auto* checkbox = new QCheckBox(backend->hash_algorithm_name(algorithm_id), &dialog);
+                checkbox->setChecked(backend->is_hash_algorithm_enabled(algorithm_id));
+                algorithms_layout->addWidget(checkbox, index / column_count, index % column_count);
+                algorithm_checkboxes.push_back({algorithm_id, checkbox});
+            }
 
-            layout->addWidget(crc32);
-            layout->addWidget(md5);
-            layout->addWidget(sha1);
-            layout->addWidget(sha256);
-            layout->addWidget(sha512);
+            layout->addLayout(algorithms_layout);
             layout->addWidget(buttons);
 
             QObject::connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
             QObject::connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
 
             if (dialog.exec() == QDialog::Accepted) {
-                backend->setSetting_crc32(crc32->isChecked());
-                backend->setSetting_md5(md5->isChecked());
-                backend->setSetting_sha1(sha1->isChecked());
-                backend->setSetting_sha256(sha256->isChecked());
-                backend->setSetting_sha512(sha512->isChecked());
+                for (const auto& entry : algorithm_checkboxes) {
+                    backend->set_hash_algorithm_enabled(entry.id, entry.checkbox->isChecked());
+                }
                 backend->apply_settings();
                 apply_table_column_width_hints(table_view);
             }
@@ -370,22 +359,32 @@ extern "C" {
                 const char* description;
             };
 
-            const RenameTagRow rename_tags[] = {
+            const RenameTagRow base_tags[] = {
                 {"%FILENAME%", "Original filename (without extension)"},
                 {"%FILEEXT%", "File extension (without dot)"},
-                {"%CRC%", "CRC32 hash"},
-                {"%MD5%", "MD5 hash"},
-                {"%SHA1%", "SHA1 hash"},
-                {"%SHA256%", "SHA256 hash"},
-                {"%SHA512%", "SHA512 hash"},
             };
 
-            for (int row = 0; row < static_cast<int>(std::size(rename_tags)); ++row) {
-                auto* tag_label = new QLabel(QString::fromLatin1(rename_tags[row].tag), &dialog);
-                auto* description_label = new QLabel(QString::fromLatin1(rename_tags[row].description), &dialog);
+            int row = 0;
+            for (const auto& tag : base_tags) {
+                auto* tag_label = new QLabel(QString::fromLatin1(tag.tag), &dialog);
+                auto* description_label = new QLabel(QString::fromLatin1(tag.description), &dialog);
                 tag_label->setFont(fixed_font);
                 tags_layout->addWidget(tag_label, row, 0);
                 tags_layout->addWidget(description_label, row, 1);
+                ++row;
+            }
+
+            const auto algorithm_ids = backend->all_hash_algorithm_ids();
+            for (int index = 0; index < algorithm_ids.size(); ++index) {
+                const QString algorithm_id = algorithm_ids.at(index);
+                auto* tag_label = new QLabel(backend->hash_algorithm_tag(algorithm_id), &dialog);
+                auto* description_label = new QLabel(
+                    backend->hash_algorithm_name(algorithm_id) + QStringLiteral(" hash"),
+                    &dialog);
+                tag_label->setFont(fixed_font);
+                tags_layout->addWidget(tag_label, row, 0);
+                tags_layout->addWidget(description_label, row, 1);
+                ++row;
             }
 
             layout->addWidget(pattern_label);
@@ -509,27 +508,16 @@ extern "C" {
                 });
 
                 auto* copy_hash_menu = menu.addMenu(QStringLiteral("Copy Hash"));
-                struct HashAction {
-                    const char* label;
-                    int algo;
-                    bool enabled;
-                };
-                const HashAction hash_actions[] = {
-                    {"CRC32", 0, backend->getSetting_crc32()},
-                    {"MD5", 1, backend->getSetting_md5()},
-                    {"SHA1", 2, backend->getSetting_sha1()},
-                    {"SHA256", 3, backend->getSetting_sha256()},
-                    {"SHA512", 4, backend->getSetting_sha512()},
-                };
-
-                for (const auto& action_def : hash_actions) {
-                    if (!action_def.enabled) {
+                const auto algorithm_ids = backend->all_hash_algorithm_ids();
+                for (int idx = 0; idx < algorithm_ids.size(); ++idx) {
+                    const QString algorithm_id = algorithm_ids.at(idx);
+                    if (!backend->is_hash_algorithm_enabled(algorithm_id)) {
                         continue;
                     }
 
-                    auto* action = copy_hash_menu->addAction(QString::fromLatin1(action_def.label));
-                    QObject::connect(action, &QAction::triggered, &menu, [backend, algo = action_def.algo]() {
-                        backend->copy_hash(algo);
+                    auto* action = copy_hash_menu->addAction(backend->hash_algorithm_name(algorithm_id));
+                    QObject::connect(action, &QAction::triggered, &menu, [backend, algorithm_id]() {
+                        backend->copy_hash(algorithm_id);
                     });
                 }
 
@@ -540,30 +528,23 @@ extern "C" {
 
                 menu.addSeparator();
                 auto* save_hash_menu = menu.addMenu(QStringLiteral("Save Hash File"));
-                const HashAction save_actions[] = {
-                    {"CRC32 / SFV", 0, backend->getSetting_crc32()},
-                    {"MD5", 1, backend->getSetting_md5()},
-                    {"SHA1", 2, backend->getSetting_sha1()},
-                    {"SHA256", 3, backend->getSetting_sha256()},
-                    {"SHA512", 4, backend->getSetting_sha512()},
-                };
-
-                for (const auto& action_def : save_actions) {
-                    if (!action_def.enabled) {
+                for (int idx = 0; idx < algorithm_ids.size(); ++idx) {
+                    const QString algorithm_id = algorithm_ids.at(idx);
+                    if (!backend->is_hash_algorithm_enabled(algorithm_id)) {
                         continue;
                     }
 
-                    auto* action = save_hash_menu->addAction(QString::fromLatin1(action_def.label));
+                    auto* action = save_hash_menu->addAction(backend->hash_algorithm_save_label(algorithm_id));
                     QObject::connect(
                         action,
                         &QAction::triggered,
                         &menu,
-                        [backend, table_view, algo = action_def.algo]() {
+                        [backend, table_view, algorithm_id]() {
                             const auto path = QFileDialog::getSaveFileName(
                                 table_view,
                                 QStringLiteral("Save hash file"));
                             if (!path.isEmpty()) {
-                                backend->save_hash_file(algo, path);
+                                backend->save_hash_file(algorithm_id, path);
                             }
                         });
                 }
