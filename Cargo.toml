@@ -17,6 +17,7 @@ md-5 = "0.10"
 ed2k = "1"
 blake3 = "1"
 blake2s_simd = "1"
+blake2b_simd = "1"
 openssl = "0.10"
 open = "5"
 serde = { version = "1", features = ["derive"] }

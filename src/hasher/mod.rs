@@ -1,3 +1,5 @@
+mod blake2b_256;
+mod blake2b_512;
 mod blake2sp;
 mod blake3;
 mod crc32;
@@ -36,6 +38,10 @@ pub enum HashKind {
     BLAKE3,
     #[serde(rename = "blake2sp")]
     BLAKE2sp,
+    #[serde(rename = "blake2b_256")]
+    BLAKE2b_256,
+    #[serde(rename = "blake2b_512")]
+    BLAKE2b_512,
     #[serde(rename = "sha3_224")]
     SHA3_224,
     #[serde(rename = "sha3_256")]
@@ -57,6 +63,8 @@ impl HashKind {
             Self::ED2K,
             Self::BLAKE3,
             Self::BLAKE2sp,
+            Self::BLAKE2b_256,
+            Self::BLAKE2b_512,
             Self::SHA3_224,
             Self::SHA3_256,
             Self::SHA3_384,
@@ -74,6 +82,8 @@ impl HashKind {
             HashKind::ED2K => "ed2k",
             HashKind::BLAKE3 => "blake3",
             HashKind::BLAKE2sp => "blake2sp",
+            HashKind::BLAKE2b_256 => "blake2b_256",
+            HashKind::BLAKE2b_512 => "blake2b_512",
             HashKind::SHA3_224 => "sha3_224",
             HashKind::SHA3_256 => "sha3_256",
             HashKind::SHA3_384 => "sha3_384",
@@ -95,6 +105,8 @@ impl HashKind {
             HashKind::ED2K => "ED2K",
             HashKind::BLAKE3 => "BLAKE3",
             HashKind::BLAKE2sp => "BLAKE2sp",
+            HashKind::BLAKE2b_256 => "BLAKE2b-256",
+            HashKind::BLAKE2b_512 => "BLAKE2b-512",
             HashKind::SHA3_224 => "SHA3-224",
             HashKind::SHA3_256 => "SHA3-256",
             HashKind::SHA3_384 => "SHA3-384",
@@ -112,6 +124,8 @@ impl HashKind {
             HashKind::ED2K => "%ED2K%",
             HashKind::BLAKE3 => "%BLAKE3%",
             HashKind::BLAKE2sp => "%BLAKE2SP%",
+            HashKind::BLAKE2b_256 => "%BLAKE2B256%",
+            HashKind::BLAKE2b_512 => "%BLAKE2B512%",
             HashKind::SHA3_224 => "%SHA3_224%",
             HashKind::SHA3_256 => "%SHA3_256%",
             HashKind::SHA3_384 => "%SHA3_384%",
@@ -129,6 +143,8 @@ impl HashKind {
             HashKind::ED2K => 32,
             HashKind::BLAKE3 => 64,
             HashKind::BLAKE2sp => 64,
+            HashKind::BLAKE2b_256 => 64,
+            HashKind::BLAKE2b_512 => 128,
             HashKind::SHA3_224 => 56,
             HashKind::SHA3_256 => 64,
             HashKind::SHA3_384 => 96,
@@ -146,6 +162,8 @@ impl HashKind {
             HashKind::ED2K => "ED2K",
             HashKind::BLAKE3 => "BLAKE3",
             HashKind::BLAKE2sp => "BLAKE2sp",
+            HashKind::BLAKE2b_256 => "BLAKE2b-256",
+            HashKind::BLAKE2b_512 => "BLAKE2b-512",
             HashKind::SHA3_224 => "SHA3-224",
             HashKind::SHA3_256 => "SHA3-256",
             HashKind::SHA3_384 => "SHA3-384",
@@ -178,6 +196,8 @@ pub fn create_hasher(kind: HashKind) -> Box<dyn HashAlgorithm> {
         HashKind::ED2K => Box::new(ed2k::Ed2kHasher::new()),
         HashKind::BLAKE3 => Box::new(blake3::Blake3Hasher::new()),
         HashKind::BLAKE2sp => Box::new(blake2sp::Blake2spHasher::new()),
+        HashKind::BLAKE2b_256 => Box::new(blake2b_256::Blake2b256Hasher::new()),
+        HashKind::BLAKE2b_512 => Box::new(blake2b_512::Blake2b512Hasher::new()),
         HashKind::SHA3_224 => Box::new(sha3_224::Sha3_224Hasher::new()),
         HashKind::SHA3_256 => Box::new(sha3_256::Sha3_256Hasher::new()),
         HashKind::SHA3_384 => Box::new(sha3_384::Sha3_384Hasher::new()),
@@ -208,6 +228,8 @@ mod tests {
                 "ed2k",
                 "blake3",
                 "blake2sp",
+                "blake2b_256",
+                "blake2b_512",
                 "sha3_224",
                 "sha3_256",
                 "sha3_384",
