@@ -85,7 +85,7 @@ fn hash_single_file(
         .map(|&k| (k, hasher::create_hasher(k)))
         .collect();
 
-    let mut reader = std::io::BufReader::with_capacity(READ_BUFFER_SIZE, file);
+    let mut reader = file;
     let mut buf = vec![0u8; READ_BUFFER_SIZE];
     let mut bytes_read_total: u64 = 0;
     let start = Instant::now();
