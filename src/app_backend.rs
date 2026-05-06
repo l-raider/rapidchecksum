@@ -1096,6 +1096,34 @@ fn hashing_kinds_for_run(visible_kinds: &[HashKind], entries: &[FileEntry]) -> V
     kinds
 }
 
+fn normalize_path_lexically(path: &Path) -> PathBuf {
+    let mut normalized = PathBuf::new();
+
+    for component in path.components() {
+        match component {
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir => {
+                let last_component = normalized.components().next_back();
+                if matches!(last_component, Some(std::path::Component::Normal(_))) {
+                    normalized.pop();
+                } else if !matches!(
+                    last_component,
+                    Some(std::path::Component::RootDir | std::path::Component::Prefix(_))
+                ) {
+                    normalized.push(component.as_os_str());
+                }
+            }
+            _ => normalized.push(component.as_os_str()),
+        }
+    }
+
+    if normalized.as_os_str().is_empty() {
+        PathBuf::from(".")
+    } else {
+        normalized
+    }
+}
+
 #[derive(Debug, Default, PartialEq, Eq)]
 struct SfvLoadSummary {
     imported_count: usize,
@@ -1111,7 +1139,7 @@ fn load_sfv_entries(manifest_path: &Path) -> Result<Vec<FileEntry>, String> {
 
     let mut entries = Vec::with_capacity(records.len());
     for record in records {
-        let resolved_path = manifest_dir.join(&record.filename);
+        let resolved_path = normalize_path_lexically(&manifest_dir.join(&record.filename));
         let mut entry = FileEntry::new(resolved_path.clone());
         entry.filename = record.filename;
         entry.set_expected_crc32(&record.crc32);
@@ -1423,6 +1451,27 @@ mod tests {
         assert_eq!(entries[1].path, temp_dir.join(missing_name));
         assert_eq!(entries[1].expected_crc32.as_deref(), Some("CAFEBABE"));
         assert_eq!(entries[1].error.as_deref(), Some("File not found"));
+
+        fs::remove_dir_all(&temp_dir).unwrap();
+    }
+
+    #[test]
+    fn load_sfv_entries_normalizes_relative_components() {
+        let temp_dir = create_temp_dir("load-sfv-entries-normalized");
+        let nested_dir = temp_dir.join("nested");
+        let existing_path = temp_dir.join("movie part 1.mkv");
+        let manifest_path = temp_dir.join("checksums.sfv");
+
+        fs::create_dir_all(&nested_dir).unwrap();
+        fs::write(&existing_path, b"data").unwrap();
+        fs::write(&manifest_path, "nested/../movie part 1.mkv DEADBEEF\n").unwrap();
+
+        let entries = load_sfv_entries(&manifest_path).unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].path, existing_path);
+        assert_eq!(entries[0].filename, "nested/../movie part 1.mkv");
+        assert_eq!(entries[0].error, None);
 
         fs::remove_dir_all(&temp_dir).unwrap();
     }
