@@ -574,6 +574,12 @@ impl qobject::AppBackend {
                     entry.error = None;
                 }
                 self.as_mut().rust_mut().files_completed += 1;
+                let completed = self.rust().files_completed;
+                let total = self.rust().total_files;
+                if total > 0 {
+                    self.as_mut().set_global_progress(completed as f32 / total as f32);
+                }
+                self.as_mut().set_file_progress(1.0);
 
                 let roles = QVector::<i32>::default();
                 let col_count = (3 + self.rust().visible_kinds.len()) as i32;
@@ -588,6 +594,12 @@ impl qobject::AppBackend {
                     entry.info = String::new();
                 }
                 self.as_mut().rust_mut().files_completed += 1;
+                let completed = self.rust().files_completed;
+                let total = self.rust().total_files;
+                if total > 0 {
+                    self.as_mut().set_global_progress(completed as f32 / total as f32);
+                }
+                self.as_mut().set_file_progress(1.0);
 
                 let roles = QVector::<i32>::default();
                 let col_count = (3 + self.rust().visible_kinds.len()) as i32;
