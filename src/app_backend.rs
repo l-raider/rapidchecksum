@@ -726,7 +726,7 @@ impl qobject::AppBackend {
             r.config.hash_sha256 = r.setting_sha256;
             r.config.hash_sha512 = r.setting_sha512;
             r.config.hash_uppercase = r.setting_hash_uppercase;
-            let _ = r.config.save();
+            r.config.save();
             r.visible_kinds = r.config.enabled_hash_kinds();
         }
         unsafe { self.as_mut().end_reset_model(); }
@@ -743,7 +743,7 @@ impl qobject::AppBackend {
     fn apply_rename_settings(mut self: Pin<&mut Self>) {
         let pattern = self.rust().setting_rename_pattern.to_string();
         self.as_mut().rust_mut().config.rename_pattern = pattern;
-        let _ = self.rust().config.save();
+        self.rust().config.save();
     }
 
     fn rename_files(mut self: Pin<&mut Self>) {
