@@ -45,3 +45,5 @@ LEAN-CTX.md
 AGENTS.md
 .cursorrules
 .github/copilot/copilot-instructions.md
+.cowork/Skills.lock
+.cowork/Skills.toml
