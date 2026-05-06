@@ -8,4 +8,4 @@ X-KDE-Protocols=file
 [Desktop Action rapidchecksum]
 Name=RapidChecksum
 Icon=io.github.l_raider.rapidchecksum
-Exec=flatpak run --file-forwarding io.github.l_raider.rapidchecksum @@ %F @@
+Exec=flatpak run io.github.l_raider.rapidchecksum %F
