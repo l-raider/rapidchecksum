@@ -162,7 +162,7 @@ pub mod qobject {
         #[qinvokable]
         fn clear_list(self: Pin<&mut AppBackend>);
         #[qinvokable]
-        fn remove_selected(self: Pin<&mut AppBackend>);
+        fn remove_row_at(self: Pin<&mut AppBackend>, row: i32);
         #[qinvokable]
         fn select_row(self: Pin<&mut AppBackend>, row: i32);
         #[qinvokable]
@@ -587,26 +587,20 @@ impl qobject::AppBackend {
             .set_status_text(QString::from("Ready"));
     }
 
-    fn remove_selected(mut self: Pin<&mut Self>) {
-        let row = self.rust().selected_row;
-        if row < 0 {
-            return;
-        }
-        let idx = row as usize;
-        if idx >= self.rust().entries.len() {
+    fn remove_row_at(mut self: Pin<&mut Self>, row: i32) {
+        if row < 0 || row as usize >= self.rust().entries.len() {
             return;
         }
         let invalid = QModelIndex::default();
         unsafe {
             self.as_mut().begin_remove_rows(&invalid, row, row);
         }
-        self.as_mut().rust_mut().entries.remove(idx);
+        self.as_mut().rust_mut().entries.remove(row as usize);
         unsafe {
             self.as_mut().end_remove_rows();
         }
         let new_count = self.rust().entries.len() as i32;
         self.as_mut().set_file_count(new_count);
-        self.as_mut().set_selected_row(-1);
     }
 
     fn select_row(mut self: Pin<&mut Self>, row: i32) {

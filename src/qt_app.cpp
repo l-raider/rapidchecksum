@@ -270,7 +270,7 @@ extern "C" {
 
         table_view->setModel(backend);
         table_view->setSelectionBehavior(QAbstractItemView::SelectRows);
-        table_view->setSelectionMode(QAbstractItemView::SingleSelection);
+        table_view->setSelectionMode(QAbstractItemView::ExtendedSelection);
         table_view->setAlternatingRowColors(true);
         table_view->setContextMenuPolicy(Qt::CustomContextMenu);
         table_view->setItemDelegate(new ResultsTableDelegate(table_view));
@@ -494,9 +494,13 @@ extern "C" {
                     return;
                 }
 
-                table_view->selectionModel()->setCurrentIndex(
-                    index,
-                    QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
+                if (!table_view->selectionModel()->isSelected(index)) {
+                    table_view->selectionModel()->setCurrentIndex(
+                        index,
+                        QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
+                } else {
+                    backend->select_row(index.row());
+                }
 
                 QMenu menu(table_view);
                 auto* copy_file_path_action = menu.addAction(QStringLiteral("Copy File Path"));
@@ -588,12 +592,20 @@ extern "C" {
         QObject::connect(clear_button, &QPushButton::clicked, backend, [backend](bool) {
             backend->clear_list();
         });
-        QObject::connect(remove_button, &QPushButton::clicked, backend, [backend](bool) {
-            backend->remove_selected();
-        });
-        QObject::connect(remove_selected_action, &QAction::triggered, backend, [backend](bool) {
-            backend->remove_selected();
-        });
+        auto remove_selected_rows = [backend, table_view](bool) {
+            const auto selected = table_view->selectionModel()->selectedRows();
+            std::vector<int> rows;
+            rows.reserve(static_cast<size_t>(selected.size()));
+            for (const auto& idx : selected) {
+                rows.push_back(idx.row());
+            }
+            std::sort(rows.begin(), rows.end(), std::greater<int>());
+            for (int row : rows) {
+                backend->remove_row_at(row);
+            }
+        };
+        QObject::connect(remove_button, &QPushButton::clicked, backend, remove_selected_rows);
+        QObject::connect(remove_selected_action, &QAction::triggered, backend, remove_selected_rows);
         QObject::connect(rename_button, &QPushButton::clicked, window, confirm_rename_files);
 
         auto* file_menu = window->menuBar()->addMenu(QStringLiteral("File"));
