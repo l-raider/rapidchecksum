@@ -33,6 +33,7 @@
 #include <QtGui/QPalette>
 #include <QtCore/QItemSelectionModel>
 #include <QtCore/QFileInfo>
+#include <QtWidgets/QMessageBox>
 
 #include "rapidchecksum/src/app_backend.cxxqt.h"
 
@@ -104,6 +105,35 @@ struct SortState {
 static QString widget_window_title(const AppBackend* backend)
 {
     return QStringLiteral("RapidChecksum %1").arg(backend->getApp_version());
+}
+
+static const qint64 HASH_FILE_SIZE_WARN_THRESHOLD = 100LL * 1024 * 1024; // 100 MB
+
+/// Returns true if the file is below the size threshold, or if the user
+/// explicitly confirms they want to open an unusually large file.
+static bool confirm_large_hash_file(QWidget* parent, const QString& path)
+{
+    const qint64 size = QFileInfo(path).size();
+    if (size <= HASH_FILE_SIZE_WARN_THRESHOLD) {
+        return true;
+    }
+
+    const double size_mb = static_cast<double>(size) / (1024.0 * 1024.0);
+    const QString message = QString(
+        "The selected file is %1 MB, which is unusually large for a hash file.\n\n"
+        "Hash files (such as .sfv) are plain text and are rarely larger than a "
+        "few kilobytes. This file may not be a valid hash file, and attempting "
+        "to parse it could consume a large amount of memory.\n\n"
+        "Do you want to open it anyway?"
+    ).arg(size_mb, 0, 'f', 1);
+
+    return QMessageBox::warning(
+        parent,
+        QStringLiteral("Large File Warning"),
+        message,
+        QMessageBox::Yes | QMessageBox::No,
+        QMessageBox::No
+    ) == QMessageBox::Yes;
 }
 
 static int progress_value(float progress)
@@ -297,7 +327,7 @@ extern "C" {
                 QStringLiteral("Open SFV file"),
                 QString(),
                 QStringLiteral("SFV Files (*.sfv);;All Files (*)"));
-            if (!path.isEmpty()) {
+            if (!path.isEmpty() && confirm_large_hash_file(window, path)) {
                 backend->load_hash_file(path);
                 apply_table_column_width_hints(table_view);
             }
@@ -738,7 +768,9 @@ extern "C" {
         }
 
         for (const auto& path : s_startup_sfv_paths) {
-            s_backend->load_hash_file(path);
+            if (confirm_large_hash_file(s_main_window, path)) {
+                s_backend->load_hash_file(path);
+            }
         }
         s_startup_sfv_paths.clear();
 
