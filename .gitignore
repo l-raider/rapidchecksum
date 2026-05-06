@@ -33,3 +33,6 @@ target
 /flatpak/cargo-vendor-config.toml
 *.flatpak
 /flatpak/flatpak-cargo-generator.py
+
+/.lean-ctx/
+.vscode/mcp.json
