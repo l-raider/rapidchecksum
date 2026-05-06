@@ -31,14 +31,10 @@ modules:
       - cp flatpak/cargo-vendor-config.toml .cargo/config.toml
       - cargo --offline build --release
       - install -Dm755 target/release/rapidchecksum /app/bin/rapidchecksum
-      - install -Dm644 flatpak/io.github.l_raider.rapidchecksum.desktop
-          /app/share/applications/io.github.l_raider.rapidchecksum.desktop
-        - install -Dm644 flatpak/io.github.l_raider.rapidchecksum-mime.xml
-          /app/share/mime/packages/io.github.l_raider.rapidchecksum-mime.xml
-        - install -Dm644 flatpak/io.github.l_raider.rapidchecksum.metainfo.xml
-          /app/share/metainfo/io.github.l_raider.rapidchecksum.metainfo.xml
-      - install -Dm644 flatpak/icons/hicolor/scalable/apps/io.github.l_raider.rapidchecksum.svg
-          /app/share/icons/hicolor/scalable/apps/io.github.l_raider.rapidchecksum.svg
+      - install -Dm644 flatpak/io.github.l_raider.rapidchecksum.desktop /app/share/applications/io.github.l_raider.rapidchecksum.desktop
+      - install -Dm644 flatpak/io.github.l_raider.rapidchecksum-mime.xml /app/share/mime/packages/io.github.l_raider.rapidchecksum-mime.xml
+      - install -Dm644 flatpak/io.github.l_raider.rapidchecksum.metainfo.xml /app/share/metainfo/io.github.l_raider.rapidchecksum.metainfo.xml
+      - install -Dm644 flatpak/icons/hicolor/scalable/apps/io.github.l_raider.rapidchecksum.svg /app/share/icons/hicolor/scalable/apps/io.github.l_raider.rapidchecksum.svg
       - for size in 16 32 48 64 128 256 512; do
           install -Dm644
             "flatpak/icons/hicolor/${size}x${size}/apps/io.github.l_raider.rapidchecksum.png"
