@@ -53,7 +53,12 @@ pub fn parse_sfv(content: &str) -> io::Result<Vec<SfvRecord>> {
         let checksum_start = line.len().checked_sub(8).ok_or_else(|| {
             invalid_sfv_line(line_number + 1, "missing 8-digit CRC32 checksum")
         })?;
-        let checksum = &line[checksum_start..];
+        let checksum = line.get(checksum_start..).ok_or_else(|| {
+            invalid_sfv_line(
+                line_number + 1,
+                "checksum must be exactly 8 hexadecimal characters",
+            )
+        })?;
         if !checksum.bytes().all(|byte| byte.is_ascii_hexdigit()) {
             return Err(invalid_sfv_line(
                 line_number + 1,
