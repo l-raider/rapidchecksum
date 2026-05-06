@@ -96,6 +96,31 @@ fn invalid_sfv_line(line_number: usize, message: &str) -> io::Error {
     )
 }
 
+fn write_standard_hash_line(
+    writer: &mut impl Write,
+    hash: &str,
+    filename: &str,
+) -> io::Result<()> {
+    let needs_escape = filename
+        .chars()
+        .any(|ch| matches!(ch, '\\' | '\n' | '\r'));
+
+    if !needs_escape {
+        return writeln!(writer, "{hash} *{filename}");
+    }
+
+    write!(writer, "\\{hash} *")?;
+    for ch in filename.chars() {
+        match ch {
+            '\\' => writer.write_all(br"\\")?,
+            '\n' => writer.write_all(br"\n")?,
+            '\r' => writer.write_all(br"\r")?,
+            _ => write!(writer, "{ch}")?,
+        }
+    }
+    writeln!(writer)
+}
+
 /// Write a hash file for the given entries. Format depends on hash kind:
 /// - CRC32 (SFV): `filename CRC32VALUE`
 /// - Others: `hashvalue *filename`
@@ -126,7 +151,7 @@ pub fn write_hash_file(
             }
             // Standard hash format: hash *filename (binary mode indicator)
             _ => {
-                writeln!(writer, "{} *{}", hash, entry.filename)?;
+                write_standard_hash_line(&mut writer, &hash, &entry.filename)?;
             }
         }
     }
@@ -254,6 +279,24 @@ mod tests {
         let content = fs::read_to_string(&output_path).unwrap();
 
         assert_eq!(content, "deadbeef *movie part 1.mkv\n");
+
+        fs::remove_dir_all(&output_dir).unwrap();
+    }
+
+    #[test]
+    fn write_hash_file_escapes_special_filenames_for_non_crc_formats() {
+        let output_dir = create_temp_dir("fileio-md5-escaped-format");
+        let output_path = output_dir.join("checksums.md5");
+
+        let mut entry = FileEntry::default();
+        entry.filename = "line\nbreak\\name.bin".to_string();
+        entry.hashes.insert(HashKind::MD5, "deadbeef".to_string());
+
+        write_hash_file(&[entry], &output_path, HashKind::MD5, false).unwrap();
+
+        let content = fs::read_to_string(&output_path).unwrap();
+
+        assert_eq!(content, "\\deadbeef *line\\nbreak\\\\name.bin\n");
 
         fs::remove_dir_all(&output_dir).unwrap();
     }
