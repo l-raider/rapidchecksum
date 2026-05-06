@@ -1170,7 +1170,11 @@ fn merge_sfv_entries(existing_entries: &mut Vec<FileEntry>, loaded_entries: Vec<
                 existing_entry.set_expected_crc32(expected_crc32);
             }
             match loaded_entry.error.take() {
-                Some(error) => existing_entry.error = Some(error),
+                Some(error) => {
+                    existing_entry.error = Some(error);
+                    existing_entry.hashes.clear();
+                    existing_entry.info.clear();
+                }
                 None if existing_entry.error.as_deref() == Some("File not found") => {
                     existing_entry.error = None;
                 }
@@ -1520,5 +1524,34 @@ mod tests {
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].expected_crc32.as_deref(), Some("DEADBEEF"));
         assert_eq!(entries[0].verify_status(), 1);
+    }
+
+    #[test]
+    fn merge_sfv_entries_clears_stale_hash_state_for_missing_files() {
+        let mut existing_entry = FileEntry::new(PathBuf::from("/tmp/missing.bin"));
+        existing_entry.hashes.insert(HashKind::CRC32, "DEADBEEF".to_string());
+        existing_entry.info = "old hash result".to_string();
+
+        let mut loaded_entry = FileEntry::new(PathBuf::from("/tmp/missing.bin"));
+        loaded_entry.filename = "missing.bin".to_string();
+        loaded_entry.set_expected_crc32("cafebabe");
+        loaded_entry.error = Some("File not found".to_string());
+
+        let mut entries = vec![existing_entry];
+        let summary = merge_sfv_entries(&mut entries, vec![loaded_entry]);
+
+        assert_eq!(
+            summary,
+            SfvLoadSummary {
+                imported_count: 1,
+                added_count: 0,
+                updated_count: 1,
+                missing_count: 1,
+            }
+        );
+        assert_eq!(entries[0].error.as_deref(), Some("File not found"));
+        assert_eq!(entries[0].hash_value(HashKind::CRC32), "");
+        assert_eq!(entries[0].info, "");
+        assert_eq!(entries[0].verify_status(), 0);
     }
 }
