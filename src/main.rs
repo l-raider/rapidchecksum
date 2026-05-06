@@ -44,5 +44,5 @@ fn main() {
     }
     unsafe { qt_process_startup_sfv() };
 
-    unsafe { qt_app_exec() };
+        std::process::exit(unsafe { qt_app_exec() });
 }

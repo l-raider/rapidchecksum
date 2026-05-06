@@ -25,7 +25,6 @@ fn set_clipboard(text: &str) {
 // Role IDs for QAbstractTableModel
 const ROLE_DISPLAY: i32 = 0;    // Qt::DisplayRole
 const ROLE_IS_ERROR: i32 = 256;  // Qt::UserRole
-const ROLE_IS_SELECTED: i32 = 257; // Qt::UserRole + 1
 const ROLE_VERIFY_STATUS: i32 = 258; // Qt::UserRole + 2
 
 #[cxx_qt::bridge]
@@ -306,7 +305,6 @@ impl qobject::AppBackend {
                 }
             }
             ROLE_IS_ERROR => QVariant::from(&entry.error.is_some()),
-            ROLE_IS_SELECTED => QVariant::from(&(rust.selected_row == row as i32)),
             ROLE_VERIFY_STATUS => QVariant::from(&entry.verify_status()),
             _ => QVariant::default(),
         }
@@ -345,7 +343,6 @@ impl qobject::AppBackend {
         let mut map = QHash::<QHashPair_i32_QByteArray>::default();
         map.insert(ROLE_DISPLAY, QByteArray::from("display"));
         map.insert(ROLE_IS_ERROR, QByteArray::from("isError"));
-        map.insert(ROLE_IS_SELECTED, QByteArray::from("isSelected"));
         map.insert(ROLE_VERIFY_STATUS, QByteArray::from("verifyStatus"));
         map
     }
@@ -672,17 +669,6 @@ impl qobject::AppBackend {
 
     fn select_row(mut self: Pin<&mut Self>, row: i32) {
         self.as_mut().set_selected_row(row);
-
-        // Notify model that isSelected role changed for all rows
-        let count = self.rust().entries.len();
-        if count > 0 {
-            let col_count = (3 + self.rust().visible_kinds.len()) as i32;
-            let top = self.index(0, 0, &QModelIndex::default());
-            let bottom = self.index(count as i32 - 1, col_count - 1, &QModelIndex::default());
-            let mut roles = QVector::<i32>::default();
-            roles.append(ROLE_IS_SELECTED);
-            self.as_mut().data_changed(&top, &bottom, &roles);
-        }
     }
 
     fn sort_by(mut self: Pin<&mut Self>, column: i32, ascending: bool) {
@@ -1441,10 +1427,31 @@ mod tests {
     #[test]
     fn save_hash_file_status_reports_write_errors() {
         let output_dir = create_temp_dir("save-hash-file-status");
+        let mut entry = FileEntry::default();
+        entry.filename = "movie part 1.mkv".to_string();
+        entry.hashes.insert(HashKind::CRC32, "deadbeef".to_string());
 
-        let status = save_hash_file_status(&[], &output_dir, HashKind::CRC32, true);
+        let status = save_hash_file_status(&[entry], &output_dir, HashKind::CRC32, true);
 
         assert!(status.starts_with("Failed to save CRC32 hash file:"));
+
+        fs::remove_dir_all(&output_dir).unwrap();
+    }
+
+    #[test]
+    fn save_hash_file_status_reports_missing_hashes() {
+        let output_dir = create_temp_dir("save-hash-file-status-empty");
+        let output_path = output_dir.join("checksums.md5");
+        let mut entry = FileEntry::default();
+        entry.filename = "movie part 1.mkv".to_string();
+
+        let status = save_hash_file_status(&[entry], &output_path, HashKind::MD5, false);
+
+        assert_eq!(
+            status,
+            "Failed to save MD5 hash file: no MD5 hashes available to write"
+        );
+        assert!(!output_path.exists());
 
         fs::remove_dir_all(&output_dir).unwrap();
     }

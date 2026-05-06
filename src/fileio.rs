@@ -170,6 +170,13 @@ pub fn write_hash_file(
         })
         .collect();
 
+    if lines.is_empty() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("no {} hashes available to write", kind.name()),
+        ));
+    }
+
     if kind == HashKind::CRC32 {
         for (filename, _) in &lines {
             validate_sfv_filename(filename)?;
@@ -338,6 +345,23 @@ mod tests {
         let content = fs::read_to_string(&output_path).unwrap();
 
         assert_eq!(content, "\\deadbeef *line\\nbreak\\\\name.bin\n");
+
+        fs::remove_dir_all(&output_dir).unwrap();
+    }
+
+    #[test]
+    fn write_hash_file_rejects_empty_exports() {
+        let output_dir = create_temp_dir("fileio-empty-export");
+        let output_path = output_dir.join("checksums.md5");
+
+        let mut entry = FileEntry::default();
+        entry.filename = "movie part 1.mkv".to_string();
+
+        let err = write_hash_file(&[entry], &output_path, HashKind::MD5, false).unwrap_err();
+
+        assert_eq!(err.kind(), io::ErrorKind::InvalidInput);
+        assert_eq!(err.to_string(), "no MD5 hashes available to write");
+        assert!(!output_path.exists());
 
         fs::remove_dir_all(&output_dir).unwrap();
     }
