@@ -34,5 +34,13 @@ target
 *.flatpak
 /flatpak/flatpak-cargo-generator.py
 
-/.lean-ctx/
+# various ai testing tools
 .vscode/mcp.json
+.lean-ctx/graph.meta.json
+.lean-ctx/graph.db
+.github/copilot/mcp.json
+.claude/rules/lean-ctx.md
+.claude/settings.local.json
+LEAN-CTX.md
+AGENTS.md
+.cursorrules
