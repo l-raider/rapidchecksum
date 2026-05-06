@@ -1143,7 +1143,7 @@ fn format_loaded_sfv_status(manifest_path: &Path, summary: &SfvLoadSummary) -> S
         .unwrap_or("SFV file");
 
     let mut status = format!(
-        "Loaded {} entrie(s) from {}",
+        "Loaded {} entry(ies) from {}",
         summary.imported_count,
         manifest_name
     );
