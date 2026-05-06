@@ -516,6 +516,16 @@ impl qobject::AppBackend {
                     })
                     .ok();
             }
+            // Guarantee the UI is always unblocked: if the worker panicked the
+            // Sender was dropped without sending AllComplete, so rx.recv() above
+            // returned Err and the loop exited early. Queue AllComplete here so
+            // is_hashing is cleared. handle_worker_message ignores this if the
+            // run already finished normally (is_hashing == false at that point).
+            qt_thread
+                .queue(move |mut backend: std::pin::Pin<&mut qobject::AppBackend>| {
+                    backend.as_mut().handle_worker_message(generation, WorkerMessage::AllComplete);
+                })
+                .ok();
         });
     }
 
