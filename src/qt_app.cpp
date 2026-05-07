@@ -377,9 +377,6 @@ extern "C" {
         auto* central_widget = new QWidget(window);
         auto* main_layout = new QVBoxLayout(central_widget);
         auto* toolbar_layout = new QHBoxLayout();
-        auto* open_files_button = new QPushButton(QStringLiteral("Open Files..."));
-        auto* open_hash_file_button = new QPushButton(QStringLiteral("Open Hash File..."));
-        auto* open_folder_button = new QPushButton(QStringLiteral("Open Folder..."));
         auto* start_button = new QPushButton(QStringLiteral("Start Hashing"));
         auto* cancel_button = new QPushButton(QStringLiteral("Cancel"));
         auto* clear_button = new QPushButton(QStringLiteral("Clear List"));
@@ -432,9 +429,6 @@ extern "C" {
         main_layout->setSpacing(4);
 
         toolbar_layout->setSpacing(4);
-        toolbar_layout->addWidget(open_files_button);
-        toolbar_layout->addWidget(open_hash_file_button);
-        toolbar_layout->addWidget(open_folder_button);
         toolbar_layout->addWidget(start_button);
         toolbar_layout->addWidget(cancel_button);
         toolbar_layout->addWidget(clear_button);
@@ -826,9 +820,6 @@ extern "C" {
             QApplication::quit();
         });
 
-        QObject::connect(open_files_button, &QPushButton::clicked, window, open_files);
-        QObject::connect(open_hash_file_button, &QPushButton::clicked, window, open_hash_file);
-        QObject::connect(open_folder_button, &QPushButton::clicked, window, open_folder);
         QObject::connect(start_button, &QPushButton::clicked, backend, [backend](bool) {
             backend->start_hashing();
         });
@@ -873,9 +864,6 @@ extern "C" {
 
         sync_action_state = [backend,
                              selection_model,
-                             open_files_button,
-                             open_hash_file_button,
-                             open_folder_button,
                              start_button,
                              cancel_button,
                              clear_button,
@@ -894,9 +882,6 @@ extern "C" {
             const bool has_selected_rows = selection_model && !selection_model->selectedRows().isEmpty();
             const bool has_rename_candidates = has_files && !backend->get_rename_preview().isEmpty();
 
-            open_files_button->setEnabled(!is_hashing);
-            open_hash_file_button->setEnabled(!is_hashing);
-            open_folder_button->setEnabled(!is_hashing);
             start_button->setEnabled(!is_hashing && has_files);
             cancel_button->setEnabled(is_hashing);
             clear_button->setEnabled(!is_hashing && has_files);
