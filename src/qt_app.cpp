@@ -281,6 +281,21 @@ static int padded_text_width(const QFontMetrics& metrics, const QString& text)
     return metrics.horizontalAdvance(text) + 18;
 }
 
+static int visible_header_section_count(QHeaderView* header)
+{
+    if (!header) {
+        return 0;
+    }
+
+    int visible_count = 0;
+    for (int section = 0; section < header->count(); ++section) {
+        if (!header->isSectionHidden(section)) {
+            ++visible_count;
+        }
+    }
+    return visible_count;
+}
+
 static QString file_count_text(int file_count)
 {
     return QStringLiteral("%1 file%2").arg(file_count).arg(file_count == 1 ? QString() : QStringLiteral("s"));
@@ -347,6 +362,50 @@ static void add_files_to_results(AppBackend* backend, QTableView* table_view, co
     if (table_view) {
         apply_table_column_width_hints(table_view);
     }
+}
+
+static void persist_hidden_column_settings(AppBackend* backend, QTableView* table_view)
+{
+    auto* header = table_view ? table_view->horizontalHeader() : nullptr;
+    if (!backend || !header) {
+        return;
+    }
+
+    QStringList hidden_keys;
+    for (int section = 0; section < header->count(); ++section) {
+        if (!header->isSectionHidden(section)) {
+            continue;
+        }
+
+        const QString key = backend->column_visibility_key(section);
+        if (!key.isEmpty()) {
+            hidden_keys.append(key);
+        }
+    }
+
+    backend->set_hidden_column_keys(hidden_keys);
+}
+
+static void apply_hidden_column_settings(AppBackend* backend, QTableView* table_view)
+{
+    auto* header = table_view ? table_view->horizontalHeader() : nullptr;
+    if (!backend || !header) {
+        return;
+    }
+
+    const QStringList hidden_keys = backend->hidden_column_keys();
+    for (int section = 0; section < header->count(); ++section) {
+        const QString key = backend->column_visibility_key(section);
+        header->setSectionHidden(section, !key.isEmpty() && hidden_keys.contains(key));
+    }
+
+    if (visible_header_section_count(header) == 0 && header->count() > 0) {
+        const int fallback_section = header->count() > 1 ? 1 : 0;
+        header->setSectionHidden(fallback_section, false);
+        persist_hidden_column_settings(backend, table_view);
+    }
+
+    apply_table_column_width_hints(table_view);
 }
 
 extern "C" {
@@ -451,6 +510,7 @@ extern "C" {
         table_view->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
         table_view->horizontalHeader()->setStretchLastSection(true);
         table_view->horizontalHeader()->setSectionsClickable(true);
+        table_view->horizontalHeader()->setContextMenuPolicy(Qt::CustomContextMenu);
         table_view->horizontalHeader()->setSortIndicatorShown(true);
         table_view->horizontalHeader()->setSortIndicator(-1, Qt::AscendingOrder);
         table_view->verticalHeader()->setVisible(false);
@@ -748,6 +808,59 @@ extern "C" {
             });
 
         QObject::connect(
+            table_view->horizontalHeader(),
+            &QHeaderView::customContextMenuRequested,
+            table_view,
+            [table_view, backend](const QPoint& pos) {
+                auto* header = table_view->horizontalHeader();
+                auto* model = table_view->model();
+                if (!header || !model) {
+                    return;
+                }
+
+                QMenu menu(header);
+                const int column_count = model->columnCount(QModelIndex());
+
+                auto* reset_columns_action = menu.addAction(QStringLiteral("Reset Columns"));
+                reset_columns_action->setEnabled(visible_header_section_count(header) < column_count);
+                QObject::connect(reset_columns_action, &QAction::triggered, &menu, [table_view, header, backend]() {
+                    for (int section = 0; section < header->count(); ++section) {
+                        header->setSectionHidden(section, false);
+                    }
+                    persist_hidden_column_settings(backend, table_view);
+                    apply_table_column_width_hints(table_view);
+                });
+                menu.addSeparator();
+
+                for (int section = 0; section < column_count; ++section) {
+                    const QString label = model->headerData(section, Qt::Horizontal, Qt::DisplayRole).toString();
+                    if (label.isEmpty()) {
+                        continue;
+                    }
+
+                    auto* action = menu.addAction(label);
+                    action->setCheckable(true);
+                    action->setChecked(!header->isSectionHidden(section));
+
+                    QObject::connect(action, &QAction::triggered, &menu, [table_view, header, backend, action, section](bool checked) {
+                        const int visible_count = visible_header_section_count(header);
+                        if (!checked && !header->isSectionHidden(section) && visible_count <= 1) {
+                            action->setChecked(true);
+                            return;
+                        }
+
+                        header->setSectionHidden(section, !checked);
+                        persist_hidden_column_settings(backend, table_view);
+                        if (checked) {
+                            apply_table_column_width_hints(table_view);
+                        }
+                    });
+                }
+
+                menu.exec(header->viewport()->mapToGlobal(pos));
+            });
+
+        QObject::connect(
             table_view,
             &QTableView::customContextMenuRequested,
             table_view,
@@ -905,7 +1018,10 @@ extern "C" {
         QObject::connect(backend, &QAbstractItemModel::dataChanged, central_widget, [sync_action_state](const auto&, const auto&, const auto&) {
             sync_action_state();
         });
-        QObject::connect(backend, &QAbstractItemModel::modelReset, central_widget, sync_action_state);
+        QObject::connect(backend, &QAbstractItemModel::modelReset, central_widget, [table_view, backend, sync_action_state]() {
+            apply_hidden_column_settings(backend, table_view);
+            sync_action_state();
+        });
 
         QObject::connect(backend, &AppBackend::is_hashingChanged, central_widget, sync_progress_state);
         QObject::connect(backend, &AppBackend::file_progressChanged, central_widget, sync_progress_state);
@@ -923,7 +1039,7 @@ extern "C" {
 
         sync_action_state();
         sync_progress_state();
-        apply_table_column_width_hints(table_view);
+        apply_hidden_column_settings(backend, table_view);
 
     s_backend = backend;
     s_results_table = table_view;

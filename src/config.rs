@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
@@ -17,6 +19,8 @@ pub struct AppConfig {
     pub hash_uppercase: bool,
     #[serde(default = "default_rename_pattern")]
     pub rename_pattern: String,
+    #[serde(default = "default_hidden_columns")]
+    pub hidden_columns: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -27,6 +31,8 @@ struct LegacyAppConfig {
     hash_uppercase: bool,
     #[serde(default = "default_rename_pattern")]
     rename_pattern: String,
+    #[serde(default = "default_hidden_columns")]
+    hidden_columns: Vec<String>,
     #[serde(default = "default_true")]
     hash_crc32: bool,
     #[serde(default = "default_true")]
@@ -51,11 +57,25 @@ fn default_enabled_algorithms() -> Vec<HashKind> {
     HashKind::all().to_vec()
 }
 
+fn default_hidden_columns() -> Vec<String> {
+    Vec::new()
+}
+
 fn normalize_enabled_algorithms(enabled_algorithms: &[HashKind]) -> Vec<HashKind> {
     HashKind::all()
         .iter()
         .copied()
         .filter(|kind| enabled_algorithms.contains(kind))
+        .collect()
+}
+
+fn normalize_hidden_columns(hidden_columns: &[String]) -> Vec<String> {
+    let mut seen = HashSet::new();
+    hidden_columns
+        .iter()
+        .filter(|column| !column.is_empty())
+        .filter(|column| seen.insert((*column).clone()))
+        .cloned()
         .collect()
 }
 
@@ -87,6 +107,7 @@ impl LegacyAppConfig {
             enabled_algorithms,
             hash_uppercase: self.hash_uppercase,
             rename_pattern: self.rename_pattern,
+            hidden_columns: normalize_hidden_columns(&self.hidden_columns),
         }
     }
 }
@@ -97,6 +118,7 @@ impl Default for AppConfig {
             enabled_algorithms: default_enabled_algorithms(),
             hash_uppercase: true,
             rename_pattern: default_rename_pattern(),
+            hidden_columns: default_hidden_columns(),
         }
     }
 }
@@ -148,6 +170,10 @@ impl AppConfig {
 
         self.enabled_algorithms = normalize_enabled_algorithms(&self.enabled_algorithms);
     }
+
+    pub fn set_hidden_columns(&mut self, hidden_columns: &[String]) {
+        self.hidden_columns = normalize_hidden_columns(hidden_columns);
+    }
 }
 
 #[cfg(test)]
@@ -194,5 +220,18 @@ mod tests {
             config.enabled_hash_kinds(),
             vec![HashKind::CRC32, HashKind::SHA3_256, HashKind::SHA3_512]
         );
+    }
+
+    #[test]
+    fn hidden_columns_are_normalized_and_preserved() {
+        let legacy = r#"{
+            "hidden_columns": ["path", "path", "hash:sha256", ""]
+        }"#;
+
+        let config = serde_json::from_str::<LegacyAppConfig>(legacy)
+            .unwrap()
+            .into_current();
+
+        assert_eq!(config.hidden_columns, vec!["path", "hash:sha256"]);
     }
 }

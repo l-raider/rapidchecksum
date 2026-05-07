@@ -176,6 +176,12 @@ pub mod qobject {
         #[qinvokable]
         fn visible_columns(self: &AppBackend) -> QStringList;
         #[qinvokable]
+        fn column_visibility_key(self: &AppBackend, column: i32) -> QString;
+        #[qinvokable]
+        fn hidden_column_keys(self: &AppBackend) -> QStringList;
+        #[qinvokable]
+        fn set_hidden_column_keys(self: Pin<&mut AppBackend>, keys: &QStringList);
+        #[qinvokable]
         fn all_hash_algorithm_ids(self: &AppBackend) -> QStringList;
         #[qinvokable]
         fn hash_algorithm_name(self: &AppBackend, algo_id: &QString) -> QString;
@@ -616,7 +622,7 @@ impl qobject::AppBackend {
                 self.as_mut().set_file_progress(1.0);
 
                 let roles = QVector::<i32>::default();
-                let col_count = (3 + self.rust().visible_kinds.len()) as i32;
+                let col_count = (4 + self.rust().visible_kinds.len()) as i32;
                 let row_tl = self.index(file_index as i32, 0, &QModelIndex::default());
                 let row_br = self.index(file_index as i32, col_count - 1, &QModelIndex::default());
                 self.as_mut().data_changed(&row_tl, &row_br, &roles);
@@ -644,7 +650,7 @@ impl qobject::AppBackend {
                 self.as_mut().set_file_progress(1.0);
 
                 let roles = QVector::<i32>::default();
-                let col_count = (3 + self.rust().visible_kinds.len()) as i32;
+                let col_count = (4 + self.rust().visible_kinds.len()) as i32;
                 let row_tl = self.index(file_index as i32, 0, &QModelIndex::default());
                 let row_br = self.index(file_index as i32, col_count - 1, &QModelIndex::default());
                 self.as_mut().data_changed(&row_tl, &row_br, &roles);
@@ -823,6 +829,38 @@ impl qobject::AppBackend {
         list
     }
 
+    fn column_visibility_key(&self, column: i32) -> QString {
+        column_visibility_key_for_column(column as usize, &self.rust().visible_kinds)
+            .map(|key| QString::from(&key))
+            .unwrap_or_default()
+    }
+
+    fn hidden_column_keys(&self) -> QStringList {
+        let mut list = QStringList::default();
+        for key in &self.rust().config.hidden_columns {
+            list.append(QString::from(key));
+        }
+        list
+    }
+
+    fn set_hidden_column_keys(mut self: Pin<&mut Self>, keys: &QStringList) {
+        let mut hidden_columns = Vec::new();
+        for i in 0..keys.len() {
+            if let Some(key) = keys.get(i) {
+                hidden_columns.push(key.to_string());
+            }
+        }
+
+        let normalized = normalize_hidden_column_keys(&hidden_columns);
+        if self.rust().config.hidden_columns == normalized {
+            return;
+        }
+
+        let config = &mut self.as_mut().rust_mut().config;
+        config.set_hidden_columns(&normalized);
+        config.save();
+    }
+
     fn all_hash_algorithm_ids(&self) -> QStringList {
         let mut list = QStringList::default();
         for &kind in HashKind::all() {
@@ -966,7 +1004,7 @@ impl qobject::AppBackend {
 
         let count = self.rust().entries.len();
         if count > 0 {
-            let col_count = (3 + self.rust().visible_kinds.len()) as i32;
+            let col_count = (4 + self.rust().visible_kinds.len()) as i32;
             let top = self.index(0, 0, &QModelIndex::default());
             let bottom = self.index(count as i32 - 1, col_count - 1, &QModelIndex::default());
             let roles = QVector::<i32>::default();
@@ -1015,6 +1053,40 @@ fn entry_parent_path(entry: &FileEntry) -> String {
         .parent()
         .map(|path| path.to_string_lossy().to_string())
         .unwrap_or_default()
+}
+
+fn column_visibility_key_for_column(column: usize, visible_kinds: &[HashKind]) -> Option<String> {
+    if column == 0 {
+        return Some("path".to_string());
+    }
+    if column == 1 {
+        return Some("filename".to_string());
+    }
+
+    let verify_col = 2 + visible_kinds.len();
+    let info_col = 3 + visible_kinds.len();
+    if column < verify_col {
+        return visible_kinds
+            .get(column - 2)
+            .map(|kind| format!("hash:{}", kind.id()));
+    }
+    if column == verify_col {
+        return Some("verify".to_string());
+    }
+    if column == info_col {
+        return Some("info".to_string());
+    }
+
+    None
+}
+
+fn normalize_hidden_column_keys(keys: &[String]) -> Vec<String> {
+    let mut seen = HashSet::new();
+    keys.iter()
+        .filter(|key| !key.is_empty())
+        .filter(|key| seen.insert((*key).clone()))
+        .cloned()
+        .collect()
 }
 
 fn sort_key(entry: &FileEntry, column: usize, visible_kinds: &[HashKind]) -> String {
@@ -1421,6 +1493,18 @@ mod tests {
         assert_eq!(entry_parent_path(&entry), "/tmp/downloads");
         assert_eq!(sort_key(&entry, 0, &[]), "/tmp/downloads");
         assert_eq!(sort_key(&entry, 1, &[]), "movie.mkv");
+    }
+
+    #[test]
+    fn column_visibility_key_for_column_uses_stable_keys() {
+        let visible_kinds = vec![HashKind::CRC32, HashKind::SHA256];
+
+        assert_eq!(column_visibility_key_for_column(0, &visible_kinds), Some("path".to_string()));
+        assert_eq!(column_visibility_key_for_column(1, &visible_kinds), Some("filename".to_string()));
+        assert_eq!(column_visibility_key_for_column(2, &visible_kinds), Some("hash:crc32".to_string()));
+        assert_eq!(column_visibility_key_for_column(3, &visible_kinds), Some("hash:sha256".to_string()));
+        assert_eq!(column_visibility_key_for_column(4, &visible_kinds), Some("verify".to_string()));
+        assert_eq!(column_visibility_key_for_column(5, &visible_kinds), Some("info".to_string()));
     }
 
     #[test]
