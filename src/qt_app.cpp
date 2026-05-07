@@ -421,7 +421,16 @@ extern "C" {
 
     int qt_app_exec()
     {
-        return s_app ? s_app->exec() : 1;
+        if (!s_app) {
+            return 1;
+        }
+        const int code = s_app->exec();
+        // Destroy QApplication while TLS is still fully valid.
+        // If we let std::process::exit() trigger the static destructor instead,
+        // Qt's TLS is partially torn down by then and QApplication::~QApplication()
+        // crashes accessing QThreadStorageData.
+        s_app.reset();
+        return code;
     }
 
     void qt_show_main_window()
