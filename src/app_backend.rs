@@ -726,6 +726,11 @@ impl qobject::AppBackend {
         if self.rust().is_hashing {
             return;
         }
+
+        let column_count = self.column_count(&QModelIndex::default());
+        if column < 0 || column >= column_count {
+            return;
+        }
         let visible_kinds = self.rust().visible_kinds.clone();
         let col = column as usize;
         unsafe { self.as_mut().begin_reset_model(); }

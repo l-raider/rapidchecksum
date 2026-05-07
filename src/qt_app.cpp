@@ -41,6 +41,7 @@
 #include <QtCore/QFileInfo>
 #include <QtCore/QMimeData>
 #include <QtCore/QObject>
+#include <QtCore/QPointer>
 #include <QtCore/QUrl>
 #include <QtWidgets/QMessageBox>
 
@@ -51,9 +52,9 @@ static char   s_argv0[] = "rapidchecksum";
 static char*  s_argv[]  = { s_argv0, nullptr };
 
 static QApplication* s_app = nullptr;
-static QMainWindow*  s_main_window = nullptr;
-static AppBackend*   s_backend = nullptr;
-static QTableView*   s_results_table = nullptr;
+static QPointer<QMainWindow> s_main_window;
+static QPointer<AppBackend>  s_backend;
+static QPointer<QTableView>  s_results_table;
 static std::vector<QString> s_startup_sfv_paths;
 static std::vector<QString> s_startup_add_paths;
 
@@ -221,8 +222,8 @@ private:
         return true;
     }
 
-    AppBackend* m_backend;
-    QTableView* m_table_view;
+    QPointer<AppBackend> m_backend;
+    QPointer<QTableView> m_table_view;
 };
 
 }
@@ -432,7 +433,7 @@ extern "C" {
         }
 
         s_main_window = new QMainWindow();
-        auto* window = s_main_window;
+        auto* window = s_main_window.data();
         auto* central_widget = new QWidget(window);
         auto* main_layout = new QVBoxLayout(central_widget);
         auto* toolbar_layout = new QHBoxLayout();
@@ -524,21 +525,43 @@ extern "C" {
         table_view->installEventFilter(file_drop_filter);
         table_view->viewport()->installEventFilter(file_drop_filter);
         auto* selection_model = table_view->selectionModel();
-        std::function<void()> sync_action_state;
+        auto sync_action_state = std::make_shared<std::function<void()>>();
+        const QPointer<AppBackend> backend_ptr(backend);
+        const QPointer<QProgressBar> file_progress_ptr(file_progress);
+        const QPointer<QProgressBar> global_progress_ptr(global_progress);
+        const QPointer<QLabel> status_label_ptr(status_label);
+        const QPointer<QLabel> file_count_label_ptr(file_count_label);
+        const QPointer<QItemSelectionModel> selection_model_ptr(selection_model);
+        const QPointer<QPushButton> start_button_ptr(start_button);
+        const QPointer<QPushButton> cancel_button_ptr(cancel_button);
+        const QPointer<QPushButton> clear_button_ptr(clear_button);
+        const QPointer<QPushButton> remove_button_ptr(remove_button);
+        const QPointer<QPushButton> rename_button_ptr(rename_button);
+        const QPointer<QAction> open_files_action_ptr(open_files_action);
+        const QPointer<QAction> open_hash_file_action_ptr(open_hash_file_action);
+        const QPointer<QAction> open_folder_action_ptr(open_folder_action);
+        const QPointer<QAction> remove_selected_action_ptr(remove_selected_action);
+        const QPointer<QAction> hash_algorithms_action_ptr(hash_algorithms_action);
+        const QPointer<QMenu> hash_casing_menu_ptr(hash_casing_menu);
+        const QPointer<QAction> file_renaming_action_ptr(file_renaming_action);
 
-        auto sync_progress_state = [backend,
-                                    file_progress,
-                                    global_progress,
-                                    status_label,
-                                    file_count_label]() {
-            const bool is_hashing = backend->getIs_hashing();
+        auto sync_progress_state = [backend_ptr,
+                                    file_progress_ptr,
+                                    global_progress_ptr,
+                                    status_label_ptr,
+                                    file_count_label_ptr]() {
+            if (!backend_ptr || !file_progress_ptr || !global_progress_ptr || !status_label_ptr || !file_count_label_ptr) {
+                return;
+            }
 
-            file_progress->setVisible(is_hashing);
-            global_progress->setVisible(is_hashing);
-            file_progress->setValue(progress_value(backend->getFile_progress()));
-            global_progress->setValue(progress_value(backend->getGlobal_progress()));
-            status_label->setText(backend->getStatus_text());
-            file_count_label->setText(file_count_text(backend->getFile_count()));
+            const bool is_hashing = backend_ptr->getIs_hashing();
+
+            file_progress_ptr->setVisible(is_hashing);
+            global_progress_ptr->setVisible(is_hashing);
+            file_progress_ptr->setValue(progress_value(backend_ptr->getFile_progress()));
+            global_progress_ptr->setValue(progress_value(backend_ptr->getGlobal_progress()));
+            status_label_ptr->setText(backend_ptr->getStatus_text());
+            file_count_label_ptr->setText(file_count_text(backend_ptr->getFile_count()));
         };
 
         auto open_files = [backend, table_view, window](bool) {
@@ -645,7 +668,7 @@ extern "C" {
             }
         };
 
-        auto show_file_renaming_dialog = [backend, window, fixed_font, &sync_action_state](bool) {
+        auto show_file_renaming_dialog = [backend, window, fixed_font, sync_action_state](bool) {
             QDialog dialog(window);
             dialog.setWindowTitle(QStringLiteral("Settings - File Renaming"));
             dialog.setModal(true);
@@ -712,7 +735,9 @@ extern "C" {
             if (dialog.exec() == QDialog::Accepted) {
                 backend->setSetting_rename_pattern(pattern_edit->text());
                 backend->apply_rename_settings();
-                sync_action_state();
+                if (*sync_action_state) {
+                    (*sync_action_state)();
+                }
             }
         };
 
@@ -722,14 +747,16 @@ extern "C" {
             apply_table_column_width_hints(table_view);
         };
 
-        auto confirm_rename_files = [backend, window, &sync_action_state](bool) {
+        auto confirm_rename_files = [backend, window, sync_action_state](bool) {
             const QString preview = backend->get_rename_preview();
             if (preview.isEmpty()) {
                 QMessageBox::information(
                     window,
                     QStringLiteral("Rename Files"),
                     QStringLiteral("No hashed files are currently eligible to be renamed."));
-                sync_action_state();
+                if (*sync_action_state) {
+                    (*sync_action_state)();
+                }
                 return;
             }
 
@@ -775,7 +802,9 @@ extern "C" {
 
             if (dialog.exec() == QDialog::Accepted) {
                 backend->rename_files();
-                sync_action_state();
+                if (*sync_action_state) {
+                    (*sync_action_state)();
+                }
             }
         };
 
@@ -975,52 +1004,73 @@ extern "C" {
         settings_menu->addMenu(hash_casing_menu);
         settings_menu->addAction(file_renaming_action);
 
-        sync_action_state = [backend,
-                             selection_model,
-                             start_button,
-                             cancel_button,
-                             clear_button,
-                             remove_button,
-                             rename_button,
-                             open_files_action,
-                             open_hash_file_action,
-                             open_folder_action,
-                             save_hash_menu_bar,
-                             remove_selected_action,
-                             hash_algorithms_action,
-                             hash_casing_menu,
-                             file_renaming_action]() {
-            const bool is_hashing = backend->getIs_hashing();
-            const bool has_files = backend->getFile_count() > 0;
-            const bool has_selected_rows = selection_model && !selection_model->selectedRows().isEmpty();
-            const bool has_rename_candidates = has_files && !backend->get_rename_preview().isEmpty();
+        *sync_action_state = [backend_ptr,
+                              selection_model_ptr,
+                              start_button_ptr,
+                              cancel_button_ptr,
+                              clear_button_ptr,
+                              remove_button_ptr,
+                              rename_button_ptr,
+                              open_files_action_ptr,
+                              open_hash_file_action_ptr,
+                              open_folder_action_ptr,
+                              save_hash_menu_bar = QPointer<QMenu>(save_hash_menu_bar),
+                              remove_selected_action_ptr,
+                              hash_algorithms_action_ptr,
+                              hash_casing_menu_ptr,
+                              file_renaming_action_ptr]() {
+            if (!backend_ptr || !selection_model_ptr || !start_button_ptr || !cancel_button_ptr || !clear_button_ptr
+                || !remove_button_ptr || !rename_button_ptr || !open_files_action_ptr || !open_hash_file_action_ptr
+                || !open_folder_action_ptr || !save_hash_menu_bar || !remove_selected_action_ptr
+                || !hash_algorithms_action_ptr || !hash_casing_menu_ptr || !file_renaming_action_ptr) {
+                return;
+            }
 
-            start_button->setEnabled(!is_hashing && has_files);
-            cancel_button->setEnabled(is_hashing);
-            clear_button->setEnabled(!is_hashing && has_files);
-            remove_button->setEnabled(!is_hashing && has_selected_rows);
-            rename_button->setEnabled(!is_hashing && has_rename_candidates);
-            open_files_action->setEnabled(!is_hashing);
-            open_hash_file_action->setEnabled(!is_hashing);
-            open_folder_action->setEnabled(!is_hashing);
+            const bool is_hashing = backend_ptr->getIs_hashing();
+            const bool has_files = backend_ptr->getFile_count() > 0;
+            const bool has_selected_rows = !selection_model_ptr->selectedRows().isEmpty();
+            const bool has_rename_candidates = has_files && !backend_ptr->get_rename_preview().isEmpty();
+
+            start_button_ptr->setEnabled(!is_hashing && has_files);
+            cancel_button_ptr->setEnabled(is_hashing);
+            clear_button_ptr->setEnabled(!is_hashing && has_files);
+            remove_button_ptr->setEnabled(!is_hashing && has_selected_rows);
+            rename_button_ptr->setEnabled(!is_hashing && has_rename_candidates);
+            open_files_action_ptr->setEnabled(!is_hashing);
+            open_hash_file_action_ptr->setEnabled(!is_hashing);
+            open_folder_action_ptr->setEnabled(!is_hashing);
             save_hash_menu_bar->setEnabled(!is_hashing && has_files);
-            remove_selected_action->setEnabled(!is_hashing && has_selected_rows);
-            hash_algorithms_action->setEnabled(!is_hashing);
-            hash_casing_menu->setEnabled(!is_hashing);
-            file_renaming_action->setEnabled(!is_hashing);
+            remove_selected_action_ptr->setEnabled(!is_hashing && has_selected_rows);
+            hash_algorithms_action_ptr->setEnabled(!is_hashing);
+            hash_casing_menu_ptr->setEnabled(!is_hashing);
+            file_renaming_action_ptr->setEnabled(!is_hashing);
         };
 
-        QObject::connect(backend, &AppBackend::is_hashingChanged, central_widget, sync_action_state);
-        QObject::connect(backend, &AppBackend::file_countChanged, central_widget, sync_action_state);
+        QObject::connect(backend, &AppBackend::is_hashingChanged, central_widget, [sync_action_state]() {
+            if (*sync_action_state) {
+                (*sync_action_state)();
+            }
+        });
+        QObject::connect(backend, &AppBackend::file_countChanged, central_widget, [sync_action_state]() {
+            if (*sync_action_state) {
+                (*sync_action_state)();
+            }
+        });
         QObject::connect(selection_model, &QItemSelectionModel::selectionChanged, central_widget, [sync_action_state](const auto&, const auto&) {
-            sync_action_state();
+            if (*sync_action_state) {
+                (*sync_action_state)();
+            }
         });
         QObject::connect(backend, &QAbstractItemModel::dataChanged, central_widget, [sync_action_state](const auto&, const auto&, const auto&) {
-            sync_action_state();
+            if (*sync_action_state) {
+                (*sync_action_state)();
+            }
         });
         QObject::connect(backend, &QAbstractItemModel::modelReset, central_widget, [table_view, backend, sync_action_state]() {
             apply_hidden_column_settings(backend, table_view);
-            sync_action_state();
+            if (*sync_action_state) {
+                (*sync_action_state)();
+            }
         });
 
         QObject::connect(backend, &AppBackend::is_hashingChanged, central_widget, sync_progress_state);
@@ -1037,7 +1087,9 @@ extern "C" {
         window->statusBar()->addWidget(status_label, 1);
         window->statusBar()->addPermanentWidget(file_count_label);
 
-        sync_action_state();
+        if (*sync_action_state) {
+            (*sync_action_state)();
+        }
         sync_progress_state();
         apply_hidden_column_settings(backend, table_view);
 
