@@ -51,7 +51,7 @@ static int    s_argc    = 1;
 static char   s_argv0[] = "rapidchecksum";
 static char*  s_argv[]  = { s_argv0, nullptr };
 
-static QApplication* s_app = nullptr;
+static std::unique_ptr<QApplication> s_app;
 static QPointer<QMainWindow> s_main_window;
 static QPointer<AppBackend>  s_backend;
 static QPointer<QTableView>  s_results_table;
@@ -233,7 +233,8 @@ static QString widget_window_title(const AppBackend* backend)
     return QStringLiteral("RapidChecksum %1").arg(backend->getApp_version());
 }
 
-static const qint64 HASH_FILE_SIZE_WARN_THRESHOLD = 100LL * 1024 * 1024; // 100 MB
+static constexpr qint64 BYTES_PER_MB = 1024LL * 1024;
+static constexpr qint64 HASH_FILE_SIZE_WARN_THRESHOLD = 100 * BYTES_PER_MB;
 
 /// Returns true if the file is below the size threshold, or if the user
 /// explicitly confirms they want to open an unusually large file.
@@ -244,7 +245,7 @@ static bool confirm_large_hash_file(QWidget* parent, const QString& path)
         return true;
     }
 
-    const double size_mb = static_cast<double>(size) / (1024.0 * 1024.0);
+    const double size_mb = static_cast<double>(size) / static_cast<double>(BYTES_PER_MB);
     const QString message = QString(
         "The selected file is %1 MB, which is unusually large for a hash file.\n\n"
         "Hash files (such as .sfv) are plain text and are rarely larger than a "
@@ -413,7 +414,7 @@ extern "C" {
     void qt_app_init()
     {
         if (!s_app) {
-            s_app = new QApplication(s_argc, s_argv);
+            s_app = std::make_unique<QApplication>(s_argc, s_argv);
             s_app->setWindowIcon(QIcon(":/icons/hicolor/256x256/apps/io.github.l_raider.rapidchecksum.png"));
         }
     }
