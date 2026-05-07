@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -364,15 +365,10 @@ impl qobject::AppBackend {
         if self.rust().is_hashing {
             return;
         }
-        let mut new_paths: Vec<PathBuf> = Vec::new();
-        for i in 0..paths.len() {
-            if let Some(s) = paths.get(i) {
-                let path = PathBuf::from(s.to_string());
-                if path.is_file() {
-                    new_paths.push(path);
-                }
-            }
-        }
+        let candidates = (0..paths.len())
+            .filter_map(|i| paths.get(i))
+            .map(|s| PathBuf::from(s.to_string()));
+        let new_paths = collect_unique_file_paths(&self.rust().entries, candidates);
         if new_paths.is_empty() {
             return;
         }
@@ -403,8 +399,9 @@ impl qobject::AppBackend {
             return;
         }
         let path = PathBuf::from(folder_path.to_string());
-        let mut new_paths: Vec<PathBuf> = Vec::new();
-        collect_files_recursive(&path, &mut new_paths);
+        let mut candidates: Vec<PathBuf> = Vec::new();
+        collect_files_recursive(&path, &mut candidates);
+        let new_paths = collect_unique_file_paths(&self.rust().entries, candidates);
         if new_paths.is_empty() {
             return;
         }
@@ -1045,6 +1042,41 @@ fn collect_files_recursive(dir: &std::path::Path, out: &mut Vec<PathBuf>) {
     }
 }
 
+fn full_identity_path(path: &Path) -> PathBuf {
+    let full_path = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir()
+            .map(|cwd| cwd.join(path))
+            .unwrap_or_else(|_| path.to_path_buf())
+    };
+
+    normalize_path_lexically(&full_path)
+}
+
+fn collect_unique_file_paths<I>(existing_entries: &[FileEntry], candidates: I) -> Vec<PathBuf>
+where
+    I: IntoIterator<Item = PathBuf>,
+{
+    let mut seen_paths: HashSet<PathBuf> = existing_entries
+        .iter()
+        .map(|entry| full_identity_path(&entry.path))
+        .collect();
+    let mut unique_paths = Vec::new();
+
+    for candidate in candidates {
+        let full_path = full_identity_path(&candidate);
+        if !full_path.is_file() {
+            continue;
+        }
+        if seen_paths.insert(full_path.clone()) {
+            unique_paths.push(full_path);
+        }
+    }
+
+    unique_paths
+}
+
 fn render_rename_pattern(
     pattern: &str,
     stem: &str,
@@ -1337,6 +1369,26 @@ mod tests {
         collect_files_recursive(&root, &mut files);
 
         assert_eq!(files, vec![file_path]);
+
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn collect_unique_file_paths_skips_duplicates_by_full_path() {
+        let root = create_temp_dir("collect-unique-file-paths");
+        let movie = root.join("movie.mkv");
+        let other = root.join("other.bin");
+
+        fs::write(&movie, b"movie").unwrap();
+        fs::write(&other, b"other").unwrap();
+
+        let existing_entries = vec![FileEntry::new(movie.clone())];
+        let unique_paths = collect_unique_file_paths(
+            &existing_entries,
+            vec![movie.clone(), root.join("nested/../movie.mkv"), other.clone(), other.clone()],
+        );
+
+        assert_eq!(unique_paths, vec![other]);
 
         fs::remove_dir_all(&root).unwrap();
     }

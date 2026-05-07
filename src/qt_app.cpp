@@ -26,14 +26,21 @@
 #include <QtGui/QAction>
 #include <QtGui/QActionGroup>
 #include <QtGui/QClipboard>
+#include <QtGui/QDragEnterEvent>
+#include <QtGui/QDragMoveEvent>
+#include <QtGui/QDropEvent>
 #include <QtGui/QFont>
 #include <QtGui/QFontDatabase>
 #include <QtGui/QFontMetrics>
 #include <QtGui/QIcon>
 #include <QtGui/QKeySequence>
 #include <QtGui/QPalette>
+#include <QtCore/QEvent>
 #include <QtCore/QItemSelectionModel>
 #include <QtCore/QFileInfo>
+#include <QtCore/QMimeData>
+#include <QtCore/QObject>
+#include <QtCore/QUrl>
 #include <QtWidgets/QMessageBox>
 
 #include "rapidchecksum/src/app_backend.cxxqt.h"
@@ -48,6 +55,9 @@ static AppBackend*   s_backend = nullptr;
 static QTableView*   s_results_table = nullptr;
 static std::vector<QString> s_startup_sfv_paths;
 static std::vector<QString> s_startup_add_paths;
+
+static void apply_table_column_width_hints(QTableView* table_view);
+static void add_files_to_results(AppBackend* backend, QTableView* table_view, const QStringList& files);
 
 namespace {
 
@@ -100,6 +110,117 @@ private:
 struct SortState {
     int column = -1;
     Qt::SortOrder order = Qt::AscendingOrder;
+};
+
+class FileDropFilter final : public QObject {
+public:
+    FileDropFilter(AppBackend* backend, QTableView* table_view, QObject* parent = nullptr)
+        : QObject(parent)
+        , m_backend(backend)
+        , m_table_view(table_view)
+    {
+    }
+
+protected:
+    bool eventFilter(QObject* watched, QEvent* event) override
+    {
+        switch (event->type()) {
+        case QEvent::DragEnter:
+            return handleDragEnter(static_cast<QDragEnterEvent*>(event));
+        case QEvent::DragMove:
+            return handleDragMove(static_cast<QDragMoveEvent*>(event));
+        case QEvent::Drop:
+            return handleDrop(static_cast<QDropEvent*>(event));
+        default:
+            break;
+        }
+
+        return QObject::eventFilter(watched, event);
+    }
+
+private:
+    bool canAcceptDrop(const QMimeData* mime_data) const
+    {
+        if (!m_backend || m_backend->getIs_hashing() || !mime_data || !mime_data->hasUrls()) {
+            return false;
+        }
+
+        for (const auto& url : mime_data->urls()) {
+            if (!url.isLocalFile()) {
+                continue;
+            }
+
+            const QFileInfo info(url.toLocalFile());
+            if (info.isFile()) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    QStringList droppedFiles(const QMimeData* mime_data) const
+    {
+        QStringList files;
+        if (!mime_data) {
+            return files;
+        }
+
+        for (const auto& url : mime_data->urls()) {
+            if (!url.isLocalFile()) {
+                continue;
+            }
+
+            const QFileInfo info(url.toLocalFile());
+            if (info.isFile()) {
+                files.append(info.absoluteFilePath());
+            }
+        }
+
+        return files;
+    }
+
+    bool handleDragEnter(QDragEnterEvent* event) const
+    {
+        if (!canAcceptDrop(event->mimeData())) {
+            return false;
+        }
+
+        event->acceptProposedAction();
+        return true;
+    }
+
+    bool handleDragMove(QDragMoveEvent* event) const
+    {
+        if (!canAcceptDrop(event->mimeData())) {
+            return false;
+        }
+
+        event->acceptProposedAction();
+        return true;
+    }
+
+    bool handleDrop(QDropEvent* event) const
+    {
+        if (!m_backend || m_backend->getIs_hashing()) {
+            return false;
+        }
+
+        const auto files = droppedFiles(event->mimeData());
+        if (files.isEmpty()) {
+            return false;
+        }
+
+        m_backend->add_files(files);
+        if (m_table_view) {
+            apply_table_column_width_hints(m_table_view);
+        }
+        event->acceptProposedAction();
+        return true;
+    }
+
+    AppBackend* m_backend;
+    QTableView* m_table_view;
 };
 
 }
@@ -202,6 +323,18 @@ static void apply_table_column_width_hints(QTableView* table_view)
     }
 }
 
+static void add_files_to_results(AppBackend* backend, QTableView* table_view, const QStringList& files)
+{
+    if (!backend || files.isEmpty()) {
+        return;
+    }
+
+    backend->add_files(files);
+    if (table_view) {
+        apply_table_column_width_hints(table_view);
+    }
+}
+
 extern "C" {
     void qt_app_init()
     {
@@ -243,6 +376,7 @@ extern "C" {
         auto* status_label = new QLabel();
         auto* table_view = new QTableView();
         auto* backend = new AppBackend(central_widget);
+        auto* file_drop_filter = new FileDropFilter(backend, table_view, window);
         auto* open_files_action = new QAction(QStringLiteral("Open Files..."), window);
         auto* open_hash_file_action = new QAction(QStringLiteral("Open Hash File..."), window);
         auto* open_folder_action = new QAction(QStringLiteral("Open Folder..."), window);
@@ -312,6 +446,14 @@ extern "C" {
         table_view->horizontalHeader()->setSortIndicator(-1, Qt::AscendingOrder);
         table_view->verticalHeader()->setVisible(false);
         table_view->verticalHeader()->setDefaultSectionSize(28);
+        window->setAcceptDrops(true);
+        central_widget->setAcceptDrops(true);
+        table_view->setAcceptDrops(true);
+        table_view->viewport()->setAcceptDrops(true);
+        window->installEventFilter(file_drop_filter);
+        central_widget->installEventFilter(file_drop_filter);
+        table_view->installEventFilter(file_drop_filter);
+        table_view->viewport()->installEventFilter(file_drop_filter);
         auto* selection_model = table_view->selectionModel();
         std::function<void()> sync_action_state;
 
@@ -332,10 +474,7 @@ extern "C" {
             const auto files = QFileDialog::getOpenFileNames(
                 window,
                 QStringLiteral("Select files to hash"));
-            if (!files.isEmpty()) {
-                backend->add_files(files);
-                apply_table_column_width_hints(table_view);
-            }
+            add_files_to_results(backend, table_view, files);
         };
 
         auto open_hash_file = [backend, table_view, window](bool) {
@@ -844,11 +983,7 @@ extern "C" {
         for (const auto& path : s_startup_add_paths) {
             paths.append(path);
         }
-        s_backend->add_files(paths);
+        add_files_to_results(s_backend, s_results_table, paths);
         s_startup_add_paths.clear();
-
-        if (s_results_table) {
-            apply_table_column_width_hints(s_results_table);
-        }
     }
 }
