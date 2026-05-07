@@ -286,21 +286,26 @@ impl qobject::AppBackend {
         let visible_kinds = &rust.visible_kinds;
         let num_hash_cols = visible_kinds.len();
         let hash_uppercase = rust.config.hash_uppercase;
+        let hash_start_col = 2;
+        let verify_col = hash_start_col + num_hash_cols;
+        let info_col = verify_col + 1;
         match role {
             ROLE_DISPLAY => {
                 if col == 0 {
+                    QVariant::from(&QString::from(entry_parent_path(entry)))
+                } else if col == 1 {
                     QVariant::from(&QString::from(&entry.filename))
-                } else if col >= 1 && col <= num_hash_cols {
-                    let kind = visible_kinds[col - 1];
+                } else if col >= hash_start_col && col < verify_col {
+                    let kind = visible_kinds[col - hash_start_col];
                     QVariant::from(&QString::from(&entry.formatted_hash_value(kind, hash_uppercase)))
-                } else if col == num_hash_cols + 1 {
+                } else if col == verify_col {
                     let text = match entry.verify_status() {
                         1 => "\u{2713} Match",
                         2 => "\u{2717} Mismatch",
                         _ => "",
                     };
                     QVariant::from(&QString::from(text))
-                } else if col == num_hash_cols + 2 {
+                } else if col == info_col {
                     let text = if let Some(ref err) = entry.error {
                         format!("Error: {}", err)
                     } else {
@@ -328,14 +333,19 @@ impl qobject::AppBackend {
 
         let visible_kinds = &self.rust().visible_kinds;
         let hash_cols = visible_kinds.len() as i32;
+        let hash_start_col = 2;
+        let verify_col = hash_start_col + hash_cols;
+        let info_col = verify_col + 1;
 
         let label = if section == 0 {
+            Some(QString::from("Path"))
+        } else if section == 1 {
             Some(QString::from("Filename"))
-        } else if section >= 1 && section <= hash_cols {
-            Some(QString::from(visible_kinds[(section - 1) as usize].name()))
-        } else if section == hash_cols + 1 {
+        } else if section >= hash_start_col && section < verify_col {
+            Some(QString::from(visible_kinds[(section - hash_start_col) as usize].name()))
+        } else if section == verify_col {
             Some(QString::from("Verify"))
-        } else if section == hash_cols + 2 {
+        } else if section == info_col {
             Some(QString::from("Info"))
         } else {
             None
@@ -358,7 +368,7 @@ impl qobject::AppBackend {
         if parent.is_valid() {
             return 0;
         }
-        (3 + self.rust().visible_kinds.len()) as i32
+        (4 + self.rust().visible_kinds.len()) as i32
     }
 
     fn add_files(mut self: Pin<&mut Self>, paths: &QStringList) {
@@ -840,13 +850,13 @@ impl qobject::AppBackend {
     }
 
     fn hash_hex_length_for_column(&self, column: i32) -> i32 {
-        if column <= 0 {
+        if column < 2 {
             return 0;
         }
 
         self.rust()
             .visible_kinds
-            .get(column as usize - 1)
+            .get(column as usize - 2)
             .map(|kind| kind.output_hex_len() as i32)
             .unwrap_or(0)
     }
@@ -999,12 +1009,23 @@ impl qobject::AppBackend {
     }
 }
 
+fn entry_parent_path(entry: &FileEntry) -> String {
+    entry
+        .path
+        .parent()
+        .map(|path| path.to_string_lossy().to_string())
+        .unwrap_or_default()
+}
+
 fn sort_key(entry: &FileEntry, column: usize, visible_kinds: &[HashKind]) -> String {
     if column == 0 {
+        return entry_parent_path(entry).to_lowercase();
+    }
+    if column == 1 {
         return entry.filename.to_lowercase();
     }
-    let verify_col = 1 + visible_kinds.len();
-    let info_col = 2 + visible_kinds.len();
+    let verify_col = 2 + visible_kinds.len();
+    let info_col = 3 + visible_kinds.len();
     if column == verify_col {
         return match entry.verify_status() {
             1 => "1_match".to_string(),
@@ -1019,7 +1040,7 @@ fn sort_key(entry: &FileEntry, column: usize, visible_kinds: &[HashKind]) -> Str
             entry.info.to_lowercase()
         };
     }
-    let kind_idx = column - 1;
+    let kind_idx = column - 2;
     if let Some(&kind) = visible_kinds.get(kind_idx) {
         entry.hash_value(kind).to_ascii_lowercase()
     } else {
@@ -1391,6 +1412,15 @@ mod tests {
         assert_eq!(unique_paths, vec![other]);
 
         fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn sort_key_uses_parent_path_for_first_column_and_filename_for_second() {
+        let entry = FileEntry::new(PathBuf::from("/tmp/downloads/movie.mkv"));
+
+        assert_eq!(entry_parent_path(&entry), "/tmp/downloads");
+        assert_eq!(sort_key(&entry, 0, &[]), "/tmp/downloads");
+        assert_eq!(sort_key(&entry, 1, &[]), "movie.mkv");
     }
 
     #[test]

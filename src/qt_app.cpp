@@ -19,6 +19,7 @@
 #include <QtWidgets/QMenuBar>
 #include <QtWidgets/QProgressBar>
 #include <QtWidgets/QPushButton>
+#include <QtWidgets/QStatusBar>
 #include <QtWidgets/QStyledItemDelegate>
 #include <QtWidgets/QTableView>
 #include <QtWidgets/QVBoxLayout>
@@ -80,10 +81,11 @@ public:
         const bool is_error = index.data(ROLE_IS_ERROR).toBool();
         const int verify_status = index.data(ROLE_VERIFY_STATUS).toInt();
         const int last_column = index.model()->columnCount(QModelIndex()) - 1;
+        const int verify_column = last_column - 1;
 
         option->displayAlignment = Qt::AlignLeft | Qt::AlignVCenter;
 
-        if (index.column() > 0 && index.column() < last_column) {
+        if (index.column() >= 2 && index.column() < verify_column) {
             option->font = m_fixed_font;
         }
 
@@ -279,6 +281,11 @@ static int padded_text_width(const QFontMetrics& metrics, const QString& text)
     return metrics.horizontalAdvance(text) + 18;
 }
 
+static QString file_count_text(int file_count)
+{
+    return QStringLiteral("%1 file%2").arg(file_count).arg(file_count == 1 ? QString() : QStringLiteral("s"));
+}
+
 static void apply_table_column_width_hints(QTableView* table_view)
 {
     auto* model = table_view->model();
@@ -302,7 +309,14 @@ static void apply_table_column_width_hints(QTableView* table_view)
     const QFontMetrics fixed_metrics(fixed_font);
     const QFontMetrics default_metrics(table_view->font());
 
-    for (int column = 1; column < verify_column; ++column) {
+    const QString filepath_header = model->headerData(0, Qt::Horizontal, Qt::DisplayRole).toString();
+    const QString filename_header = model->headerData(1, Qt::Horizontal, Qt::DisplayRole).toString();
+    const int filepath_width = std::max(padded_text_width(default_metrics, filepath_header), 320);
+    const int filename_width = std::max(padded_text_width(default_metrics, filename_header), 220);
+    table_view->setColumnWidth(0, std::max(table_view->columnWidth(0), filepath_width));
+    table_view->setColumnWidth(1, std::max(table_view->columnWidth(1), filename_width));
+
+    for (int column = 2; column < verify_column; ++column) {
         const QString header = model->headerData(column, Qt::Horizontal, Qt::DisplayRole).toString();
         int desired_width = padded_text_width(fixed_metrics, header);
 
@@ -374,6 +388,7 @@ extern "C" {
         auto* file_progress = new QProgressBar();
         auto* global_progress = new QProgressBar();
         auto* status_label = new QLabel();
+        auto* file_count_label = new QLabel();
         auto* table_view = new QTableView();
         auto* backend = new AppBackend(central_widget);
         auto* file_drop_filter = new FileDropFilter(backend, table_view, window);
@@ -460,7 +475,8 @@ extern "C" {
         auto sync_progress_state = [backend,
                                     file_progress,
                                     global_progress,
-                                    status_label]() {
+                                    status_label,
+                                    file_count_label]() {
             const bool is_hashing = backend->getIs_hashing();
 
             file_progress->setVisible(is_hashing);
@@ -468,6 +484,7 @@ extern "C" {
             file_progress->setValue(progress_value(backend->getFile_progress()));
             global_progress->setValue(progress_value(backend->getGlobal_progress()));
             status_label->setText(backend->getStatus_text());
+            file_count_label->setText(file_count_text(backend->getFile_count()));
         };
 
         auto open_files = [backend, table_view, window](bool) {
@@ -909,12 +926,15 @@ extern "C" {
         QObject::connect(backend, &AppBackend::file_progressChanged, central_widget, sync_progress_state);
         QObject::connect(backend, &AppBackend::global_progressChanged, central_widget, sync_progress_state);
         QObject::connect(backend, &AppBackend::status_textChanged, central_widget, sync_progress_state);
+        QObject::connect(backend, &AppBackend::file_countChanged, central_widget, sync_progress_state);
 
         main_layout->addLayout(toolbar_layout);
         main_layout->addWidget(file_progress);
         main_layout->addWidget(global_progress);
-        main_layout->addWidget(status_label);
         main_layout->addWidget(table_view, 1);
+
+        window->statusBar()->addWidget(status_label, 1);
+        window->statusBar()->addPermanentWidget(file_count_label);
 
         sync_action_state();
         sync_progress_state();
